@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Home</title>
+    <title>JSDoc: Source: utils.js</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,32 +17,44 @@
 
 <div id="main">
 
-    <h1 class="page-title">Home</h1>
+    <h1 class="page-title">Source: utils.js</h1>
 
     
 
 
 
     
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/** Get an array from an asynchronous iterable.
+ * @param asyncIterable {AsyncIterable} any async interable (like an asynchronous generator)
+ * @param mapFunction {AsyncFunction|function|undefined} a callback to map values from the asyncIterable to final return values in the array
+ * @returns {Array}
+ */
+async function asyncFrom(asyncIterable, mapFunction) {
+	const values = [];
+	if(mapFunction === undefined) {
+		for await (const value of asyncIterable) {
+			values.push(value);
+		}
+	}
+	else if(mapFunction.constructor.name === "AsyncFunction") {
+		for await (const value of asyncIterable) {
+			values.push(await mapFunction(value));
+		}
+	}
+	else {
+		for await (const value of asyncIterable) {
+			values.push(mapFunction(value));
+		}
+	}
+	return values;
+}
 
-
-    <h3> </h3>
-
-
-
-
-
-
-
-
-
-
-    
-
-
-
-
-
+export { asyncFrom };
+</code></pre>
+        </article>
+    </section>
 
 
 

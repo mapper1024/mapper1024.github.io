@@ -32,7 +32,14 @@
         
             <div class="class-description">Abstract mapper backend, i.e. what map is being presented.
 The backend translates between the concept of a map and a database, a file, an API, or whatever else is actually being used to store the data.
-Most methods here are low-level; users of the backend should use methods from EntityRef and its children which delegate to the MapBackend.</div>
+Most methods here are low-level; users of the backend should use methods from EntityRef and its children which delegate to the MapBackend.
+
+Underlying structure:
+The backend consists of a set of entities, which can have arbitrary properties.
+A special entity, "global", is used for properties of the whole map.
+Two types of entities have specific handling to form a graph:
+"node" - an entity with a parent and positional information.
+"edge" - an entity connecting two adjacent nodes.</div>
         
     
 </header>
@@ -95,7 +102,7 @@ Most methods here are low-level; users of the backend should use methods from En
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line9">line 9</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line16">line 16</a>
     </li></ul></dd>
     
 
@@ -276,7 +283,7 @@ Order of node IDs does not matter.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line98">line 98</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line105">line 105</a>
     </li></ul></dd>
     
 
@@ -435,7 +442,7 @@ Order of node IDs does not matter.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line62">line 62</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line69">line 69</a>
     </li></ul></dd>
     
 
@@ -593,7 +600,7 @@ Order of node IDs does not matter.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line71">line 71</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line78">line 78</a>
     </li></ul></dd>
     
 
@@ -699,7 +706,7 @@ Order of node IDs does not matter.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line148">line 148</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line155">line 155</a>
     </li></ul></dd>
     
 
@@ -807,7 +814,7 @@ Has a default implementation that does nothing.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line166">line 166</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line173">line 173</a>
     </li></ul></dd>
     
 
@@ -967,7 +974,7 @@ Has a default implementation that does nothing.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line191">line 191</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line198">line 198</a>
     </li></ul></dd>
     
 
@@ -1077,7 +1084,7 @@ Has a default implementation that does nothing.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line115">line 115</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line122">line 122</a>
     </li></ul></dd>
     
 
@@ -1255,7 +1262,7 @@ Has a default implementation that does nothing.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line126">line 126</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line133">line 133</a>
     </li></ul></dd>
     
 
@@ -1361,7 +1368,7 @@ Has a default implementation that does nothing.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line182">line 182</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line189">line 189</a>
     </li></ul></dd>
     
 
@@ -1450,7 +1457,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line172">line 172</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line179">line 179</a>
     </li></ul></dd>
     
 
@@ -1538,7 +1545,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line87">line 87</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line94">line 94</a>
     </li></ul></dd>
     
 
@@ -1644,7 +1651,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line107">line 107</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line114">line 114</a>
     </li></ul></dd>
     
 
@@ -1750,7 +1757,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line79">line 79</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line86">line 86</a>
     </li></ul></dd>
     
 
@@ -1859,7 +1866,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line177">line 177</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line184">line 184</a>
     </li></ul></dd>
     
 
@@ -1948,7 +1955,7 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line14">line 14</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line21">line 21</a>
     </li></ul></dd>
     
 
@@ -2055,7 +2062,7 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line36">line 36</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line43">line 43</a>
     </li></ul></dd>
     
 
@@ -2161,7 +2168,7 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line44">line 44</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line51">line 51</a>
     </li></ul></dd>
     
 
@@ -2268,7 +2275,7 @@ Has a default implementation that just removes the entity.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line134">line 134</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line141">line 141</a>
     </li></ul></dd>
     
 
@@ -2358,7 +2365,7 @@ However, calling code should use #removeEdge() and #removeNode() when applicable
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line157">line 157</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line164">line 164</a>
     </li></ul></dd>
     
 
@@ -2447,7 +2454,7 @@ Has a default implementation that just removes the entity.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line141">line 141</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line148">line 148</a>
     </li></ul></dd>
     
 
@@ -2536,7 +2543,7 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line21">line 21</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line28">line 28</a>
     </li></ul></dd>
     
 
@@ -2625,7 +2632,7 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line28">line 28</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line35">line 35</a>
     </li></ul></dd>
     
 
@@ -2713,7 +2720,7 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line51">line 51</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line58">line 58</a>
     </li></ul></dd>
     
 
@@ -2759,13 +2766,13 @@ Has a default implementation based on string properties.
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="MapBackend.html">MapBackend</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="MapBackend.html">MapBackend</a></li><li><a href="Mapper.html">Mapper</a></li><li><a href="RenderContext.html">RenderContext</a></li></ul><h3>Global</h3><ul><li><a href="global.html#asyncFrom">asyncFrom</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.7</a> on Thu Dec 30 2021 20:28:34 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.7</a> on Fri Dec 31 2021 18:27:26 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>
