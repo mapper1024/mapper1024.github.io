@@ -26,7 +26,11 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>/** A render context of a mapper into a specific element.
+            <pre class="prettyprint source linenums"><code>import { HookContainer } from "./hook_container.js";
+import { Vector3 } from "./geometry.js";
+import { asyncFrom } from "./utils.js";
+
+/** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
  * See Mapper.render() for instantiation.
  * Call disconnect() on a render context once the element is no longer being used for a specific Mapper to close event listeners.
@@ -49,11 +53,25 @@ class RenderContext {
 		this.canvas.style.margin = "0";
 		this.canvas.style.border = "0";
 
+		this.mapper.hooks.add("update", () => this.redraw());
+
+		this.canvas.addEventListener("click", async (event) => {
+			await this.mapper.insertNode(this.canvasPointToMap(new Vector3(event.x, event.y)));
+		});
+
 		// Watch the parent resize so we can keep our canvas filling the whole thing.
 		this.parentObserver = new ResizeObserver(() => this.recalculateSize());
 		this.parentObserver.observe(this.parent);
 
 		this.recalculateSize();
+	}
+
+	canvasPointToMap(v) {
+		return new Vector3(v.x, v.y, 0);
+	}
+
+	mapPointToCanvas(v) {
+		return new Vector3(v.x, v.y);
 	}
 
 	/** Recalculate the UI size based on the parent.
@@ -68,12 +86,47 @@ class RenderContext {
 	}
 
 	/** Completely redraw the displayed UI. */
-	redraw() {
+	async redraw() {
 		var c = this.canvas.getContext("2d");
 		c.beginPath();
 		c.rect(0, 0, this.canvas.width, this.canvas.height);
 		c.fillStyle = "blue";
 		c.fill();
+
+		const seenEdges = {};
+
+		// For all visible nodes.
+		for await (const nodeRef of this.visibleNodes()) {
+			// Node central point.
+			const center = this.mapPointToCanvas(await nodeRef.center());
+
+			// Draw node.
+			c.beginPath();
+			c.arc(center.x, center.y, 16, 0, 2 * Math.PI, false);
+			c.fillStyle = "green";
+			c.fill();
+
+			// For all edges connected to this node...
+			for await (const dirEdgeRef of this.mapper.getNodeEdges(nodeRef)) {
+				// ...that we have not yet drawn.
+				if(seenEdges[dirEdgeRef.id] === undefined) {
+					seenEdges[dirEdgeRef.id] = true;
+
+					// Draw edge to the other node.
+					const otherNodeRef = await dirEdgeRef.getDirOtherNode();
+					const otherCenter = this.mapPointToCanvas(await otherNodeRef.center());
+
+					c.beginPath();
+					c.moveTo(center.x, center.y);
+					c.lineTo(otherCenter.x, otherCenter.y);
+					c.stroke();
+				}
+			}
+		}
+	}
+
+	async * visibleNodes() {
+		yield* this.mapper.getNodesInArea(this.canvasPointToMap(new Vector3(0, 0)), this.canvasPointToMap(new Vector3(this.canvas.width, this.canvas.height)));
 	}
 
 	/** Disconnect the render context from the page and clean up listeners. */
@@ -94,6 +147,23 @@ class Mapper {
 	 */
 	constructor(backend) {
 		this.backend = backend;
+		this.hooks = new HookContainer();
+
+		this.hooks.add("updateNode", () => this.hooks.call("update"));
+		this.hooks.add("insertNode", (nodeRef) => this.hooks.call("updateNode", nodeRef));
+
+		this.options = {
+			blendDistance: 400,
+			cleanNormalDistance: 0.5,
+		};
+	}
+
+	async * getNodesInArea(a, b) {
+		yield* this.backend.getNodesInArea(a, b);
+	}
+
+	async * getNodeEdges(nodeRef) {
+		yield* this.backend.getNodeEdges(nodeRef.id);
 	}
 
 	/** Render Mapper into a div element
@@ -102,6 +172,51 @@ class Mapper {
 	 */
 	render(element) {
 		return new RenderContext(element, this);
+	}
+
+	async insertNode(point) {
+		const nodeRef = await this.backend.createNode();
+		await nodeRef.setCenter(point);
+		await this.connectNode(nodeRef, this.options);
+		this.hooks.call("insertNode", nodeRef);
+	}
+
+	async connectNode(nodeRef, options) {
+		await this.connectNodeToParent(nodeRef);
+		await this.connectNodeToAdjacentNodes(nodeRef, options);
+		await this.cleanNodeConnectionsAround(nodeRef, options);
+	}
+
+	async connectNodeToParent(nodeRef) {
+		// TODO: Parents
+		nodeRef;
+	}
+
+	async connectNodeToAdjacentNodes(nodeRef, options) {
+		for (const otherNodeRef of await asyncFrom(this.backend.getAdjacentNodes(nodeRef, options.blendDistance))) {
+			await this.backend.createEdge(nodeRef.id, otherNodeRef.id);
+		}
+	}
+
+	async cleanNodeConnectionsAround(nodeRef, options) {
+		options;
+
+		const removed = {};
+
+		for (const dirEdgeRef of await asyncFrom(this.backend.getNodeEdges(nodeRef.id))) {
+			if(!removed[dirEdgeRef.id]) {
+				for (const intersectingEdgeRef of await asyncFrom(this.backend.getIntersectingEdges(dirEdgeRef, options.blendDistance))) {
+					if((await dirEdgeRef.getLine()).distanceSquared() &lt; (await intersectingEdgeRef.getLine()).distanceSquared()) {
+						intersectingEdgeRef.remove();
+						removed[intersectingEdgeRef.id] = true;
+					}
+					else {
+						dirEdgeRef.remove();
+						break;
+					}
+				}
+			}
+		}
 	}
 }
 
@@ -122,7 +237,7 @@ export { Mapper };
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.7</a> on Fri Dec 31 2021 18:27:26 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Wed May 11 2022 01:35:44 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

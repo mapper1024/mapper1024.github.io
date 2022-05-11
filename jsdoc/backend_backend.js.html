@@ -26,7 +26,7 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>import { Point } from "../point.js";
+            <pre class="prettyprint source linenums"><code>import { Vector3 } from "../geometry.js";
 import { EntityRef, NodeRef, EdgeRef, DirEdgeRef } from "./entity.js";
 import { asyncFrom } from "../utils.js";
 
@@ -57,20 +57,20 @@ class MapBackend {
 		return this.setPString(entityId, propertyName, value.toString());
 	}
 
-	/** Set a Point property on an entity.
+	/** Set a Vector3 property on an entity.
 	 * Has a default implementation based on string properties.
 	 */
-	async setPPoint(entityId, propertyName, point) {
-		return this.setPString(entityId, propertyName, JSON.stringify(point));
+	async setPVector3(entityId, propertyName, v) {
+		return this.setPString(entityId, propertyName, JSON.stringify(v));
 	}
 
-	/** Get a Point property on an entity.
+	/** Get a Vector3 property on an entity.
 	 * Has a default implementation based on string properties.
-	 * @returns {Point}
+	 * @returns {Vector3}
 	 */
-	async getPPoint(entityId, propertyName) {
+	async getPVector3(entityId, propertyName) {
 		const object = JSON.parse(await this.getPString(entityId, propertyName));
-		return Point.fromJSON(object.x, object.y, object.z);
+		return Vector3.fromJSON(object.x, object.y, object.z);
 	}
 
 	/** Get a string property on an entity.
@@ -79,7 +79,7 @@ class MapBackend {
 	async getPString(entityId, propertyName) {
 		entityId;
 		propertyName;
-		throw "not implemented";
+		throw "getPString not implemented";
 	}
 
 	/** Set a string property on an entity. */
@@ -87,7 +87,7 @@ class MapBackend {
 		entityId;
 		propertyName;
 		value;
-		throw "not implemented";
+		throw "setPString not implemented";
 	}
 
 	/** Create a new entity in the backend.
@@ -96,7 +96,7 @@ class MapBackend {
 	 */
 	async createEntity(type) {
 		type;
-		throw "not implemented";
+		throw "createEntity not implemented";
 	}
 
 	/** Creates a new "node" entity.
@@ -105,7 +105,7 @@ class MapBackend {
 	 */
 	async createNode(parentId) {
 		parentId;
-		throw "not implemented";
+		throw "createNode not implemented";
 	}
 
 	/** Get the parent node of a node by ID, or null if the node has no parent.
@@ -113,7 +113,7 @@ class MapBackend {
 	 */
 	async getNodeParent(nodeId) {
 		nodeId;
-		throw "not implemented";
+		throw "getNodeParent not implemented";
 	}
 
 	/** Get all direct children of a node.
@@ -121,7 +121,7 @@ class MapBackend {
 	 */
 	async getNodeChildren(nodeId) {
 		nodeId;
-		throw "not implemented";
+		throw "getNodeChildren not implemented";
 	}
 
 	/** Create a new edge between two nodes.
@@ -133,7 +133,7 @@ class MapBackend {
 	async createEdge(nodeAId, nodeBId) {
 		nodeAId;
 		nodeBId;
-		throw "not implemented";
+		throw "createEdge not implemented";
 	}
 
 	/** Get all edges attached to a node.
@@ -141,7 +141,7 @@ class MapBackend {
 	 */
 	async getNodeEdges(nodeId) {
 		nodeId;
-		throw "not implemented";
+		throw "getNodeEdges not implemented";
 	}
 
 	/** Get the two nodes attached to an edge, in no particular order.
@@ -149,7 +149,7 @@ class MapBackend {
 	 */
 	async getEdgeNodes(edgeId) {
 		edgeId;
-		throw "not implemented";
+		throw "getEdgeNodes not implemented";
 	}
 
 	/** Given an edge and one of the nodes on the edge, get the other node on the edge.
@@ -182,7 +182,7 @@ class MapBackend {
 	 */
 	async entityExists(entityId) {
 		entityId;
-		throw "not implemented";
+		throw "entityExists not implemented";
 	}
 
 	/** Remove an entity from the backend.
@@ -191,7 +191,7 @@ class MapBackend {
 	 */
 	async removeEntity(entityId) {
 		entityId;
-		throw "not implemented";
+		throw "removeEntity not implemented";
 	}
 
 	/** Flush the backend to storage.
@@ -226,6 +226,55 @@ class MapBackend {
 	getDirEdgeRef(id, startId) {
 		return new DirEdgeRef(id, startId, this);
 	}
+
+	getNodesInArea(a, b) {
+		a;
+		b;
+		throw "getNodesInArea not implemented";
+	}
+
+	getEdgeBetween(nodeAId, nodeBId) {
+		nodeAId;
+		nodeBId;
+		throw "getEdgeBetween not implemented";
+	}
+
+	async * getAdjacentNodes(nodeRef, blendDistance) {
+		const center = await nodeRef.center();
+		const distance = (new Vector3(1, 1, 1)).multiplyScalar(blendDistance);
+		for await (const otherNodeRef of this.getNodesInArea(center.subtract(distance), center.add(distance))) {
+			if(otherNodeRef.id !== nodeRef.id) {
+				yield otherNodeRef;
+			}
+		}
+	}
+
+	async * getConnectedNodes(nodeRef) {
+		for await (const dirEdgeRef of this.getNodeEdges(nodeRef.id)) {
+			yield await dirEdgeRef.getDirOtherNode();
+		}
+	}
+
+	async * getIntersectingEdges(edgeRef, blendDistance) {
+		const line = await edgeRef.getLine();
+		const distance = (new Vector3(1, 1, 1)).multiplyScalar(blendDistance);
+
+		const seen = {
+			[edgeRef.id]: true,
+		};
+
+		for await (const nodeRef of this.getNodesInArea(line.fullMin().subtract(distance), line.fullMax().add(distance))) {
+			for await (const dirEdgeRef of nodeRef.getEdges()) {
+				if(!seen[dirEdgeRef.id]) {
+					seen[dirEdgeRef.id] = true;
+
+					if(line.intersects(await dirEdgeRef.getLine())) {
+						yield dirEdgeRef;
+					}
+				}
+			}
+		}
+	}
 }
 
 export { MapBackend };
@@ -245,7 +294,7 @@ export { MapBackend };
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.7</a> on Fri Dec 31 2021 18:27:26 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Wed May 11 2022 01:35:44 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>
