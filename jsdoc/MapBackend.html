@@ -158,7 +158,7 @@ Two types of entities have specific handling to form a graph:
     
 
     
-    <h4 class="name" id="createEdge"><span class="type-signature">(async) </span>createEdge<span class="signature">(nodeAId, nodeBId)</span><span class="type-signature"> &rarr; {EdgeRef}</span></h4>
+    <h4 class="name" id="createEdge"><span class="type-signature">(async) </span>createEdge<span class="signature">(nodeAId, nodeBId)</span><span class="type-signature"> &rarr; {<a href="EdgeRef.html">EdgeRef</a>}</span></h4>
     
 
     
@@ -323,7 +323,7 @@ Order of node IDs does not matter.
     </dt>
     <dd>
         
-<span class="param-type">EdgeRef</span>
+<span class="param-type"><a href="EdgeRef.html">EdgeRef</a></span>
 
 
     </dd>
@@ -341,7 +341,7 @@ Order of node IDs does not matter.
     
 
     
-    <h4 class="name" id="createEntity"><span class="type-signature">(async) </span>createEntity<span class="signature">(type)</span><span class="type-signature"> &rarr; {EntityRef}</span></h4>
+    <h4 class="name" id="createEntity"><span class="type-signature">(async) </span>createEntity<span class="signature">(type)</span><span class="type-signature"> &rarr; {<a href="EntityRef.html">EntityRef</a>}</span></h4>
     
 
     
@@ -478,7 +478,7 @@ Order of node IDs does not matter.
     </dt>
     <dd>
         
-<span class="param-type">EntityRef</span>
+<span class="param-type"><a href="EntityRef.html">EntityRef</a></span>
 
 
     </dd>
@@ -496,7 +496,7 @@ Order of node IDs does not matter.
     
 
     
-    <h4 class="name" id="createNode"><span class="type-signature">(async) </span>createNode<span class="signature">(parentId)</span><span class="type-signature"> &rarr; {NodeRef}</span></h4>
+    <h4 class="name" id="createNode"><span class="type-signature">(async) </span>createNode<span class="signature">(parentId)</span><span class="type-signature"> &rarr; {<a href="NodeRef.html">NodeRef</a>}</span></h4>
     
 
     
@@ -636,7 +636,7 @@ Order of node IDs does not matter.
     </dt>
     <dd>
         
-<span class="param-type">NodeRef</span>
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
 
 
     </dd>
@@ -850,7 +850,167 @@ Has a default implementation that does nothing.
     
 
     
-    <h4 class="name" id="getDirEdgeRef"><span class="type-signature"></span>getDirEdgeRef<span class="signature">(id, startId)</span><span class="type-signature"> &rarr; {DirEdgeRef}</span></h4>
+    <h4 class="name" id="getConnectedNodes"><span class="type-signature">(async, generator) </span>getConnectedNodes<span class="signature">(nodeRef)</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get all nodes connected to the specified node by one level of edges (that is, one edge).
+Has a default implementation based on #getNodeEdges().
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>nodeRef</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The node to search for connections on.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line241">line 241</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    The connected nodes.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getDirEdgeRef"><span class="type-signature"></span>getDirEdgeRef<span class="signature">(id, startId)</span><span class="type-signature"> &rarr; {<a href="DirEdgeRef.html">DirEdgeRef</a>}</span></h4>
     
 
     
@@ -1014,7 +1174,7 @@ Has a default implementation that does nothing.
     </dt>
     <dd>
         
-<span class="param-type">DirEdgeRef</span>
+<span class="param-type"><a href="DirEdgeRef.html">DirEdgeRef</a></span>
 
 
     </dd>
@@ -1032,7 +1192,185 @@ Has a default implementation that does nothing.
     
 
     
-    <h4 class="name" id="getEdgeNodes"><span class="type-signature">(async) </span>getEdgeNodes<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;NodeRef>}</span></h4>
+    <h4 class="name" id="getEdgeBetween"><span class="type-signature"></span>getEdgeBetween<span class="signature">(nodeAId, nodeBId)</span><span class="type-signature"> &rarr; {<a href="EdgeRef.html">EdgeRef</a>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get the edge between two nodes, if it exists.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>nodeAId</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The ID of one of the nodes on the edge to find.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>nodeBId</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The ID of the other node on the edge to find.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line216">line 216</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="EdgeRef.html">EdgeRef</a></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getEdgeNodes"><span class="type-signature">(async) </span>getEdgeNodes<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
     
 
     
@@ -1120,7 +1458,7 @@ Has a default implementation that does nothing.
     </dt>
     <dd>
         
-<span class="param-type">AsyncIterable.&lt;NodeRef></span>
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
 
 
     </dd>
@@ -1138,7 +1476,7 @@ Has a default implementation that does nothing.
     
 
     
-    <h4 class="name" id="getEdgeOtherNode"><span class="type-signature">(async) </span>getEdgeOtherNode<span class="signature">(edgeId, nodeId)</span><span class="type-signature"> &rarr; {NodeRef}</span></h4>
+    <h4 class="name" id="getEdgeOtherNode"><span class="type-signature">(async) </span>getEdgeOtherNode<span class="signature">(edgeId, nodeId)</span><span class="type-signature"> &rarr; {<a href="NodeRef.html">NodeRef</a>}</span></h4>
     
 
     
@@ -1298,7 +1636,7 @@ Has a default implementation that does nothing.
     </dt>
     <dd>
         
-<span class="param-type">NodeRef</span>
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
 
 
     </dd>
@@ -1493,7 +1831,373 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     
 
     
-    <h4 class="name" id="getNodeChildren"><span class="type-signature">(async) </span>getNodeChildren<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;NodeRef>}</span></h4>
+    <h4 class="name" id="getIntersectingEdges"><span class="type-signature">(async, generator) </span>getIntersectingEdges<span class="signature">(edgeRef, blendDistance)</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="EdgeRef.html">EdgeRef</a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get all edges within a specified blend distance that intersect with the given edge.
+Has a default implementation based on #getNodesInArea() and #NodeRef.getEdges().
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>edgeRef</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="EdgeRef.html">EdgeRef</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The edge to search for intersections on.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>blendDistance</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">How far out to search for intersections? (Necessary to avoid searching the entire map.)</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line253">line 253</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    Each intersecting edge found.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">AsyncIterable.&lt;<a href="EdgeRef.html">EdgeRef</a>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getNearbyNodes"><span class="type-signature">(async, generator) </span>getNearbyNodes<span class="signature">(nodeRef, blendDistance)</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get all nearby nodes within a specified blend distance of the specified node.
+Has a default implementation based on #getNodesInArea().
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>nodeRef</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The node that is the spatial center of the search.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>blendDistance</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">How far out to look for nodes? (Necessary to avoid searching the entire map.)</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line228">line 228</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    All the discovered nodes. Does not include the original node.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getNodeChildren"><span class="type-signature">(async) </span>getNodeChildren<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
     
 
     
@@ -1581,7 +2285,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     </dt>
     <dd>
         
-<span class="param-type">AsyncIterable.&lt;NodeRef></span>
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
 
 
     </dd>
@@ -1599,7 +2303,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     
 
     
-    <h4 class="name" id="getNodeEdges"><span class="type-signature">(async) </span>getNodeEdges<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;EdgeRef>}</span></h4>
+    <h4 class="name" id="getNodeEdges"><span class="type-signature">(async) </span>getNodeEdges<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="EdgeRef.html">EdgeRef</a>>}</span></h4>
     
 
     
@@ -1687,7 +2391,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     </dt>
     <dd>
         
-<span class="param-type">AsyncIterable.&lt;EdgeRef></span>
+<span class="param-type">AsyncIterable.&lt;<a href="EdgeRef.html">EdgeRef</a>></span>
 
 
     </dd>
@@ -1705,7 +2409,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     
 
     
-    <h4 class="name" id="getNodeParent"><span class="type-signature">(async) </span>getNodeParent<span class="signature">()</span><span class="type-signature"> &rarr; {NodeRef|null}</span></h4>
+    <h4 class="name" id="getNodeParent"><span class="type-signature">(async) </span>getNodeParent<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="NodeRef.html">NodeRef</a>|null}</span></h4>
     
 
     
@@ -1793,7 +2497,7 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
     </dt>
     <dd>
         
-<span class="param-type">NodeRef</span>
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
 |
 
 <span class="param-type">null</span>
@@ -1891,6 +2595,161 @@ Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functiona
 
 
 
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getNodesInArea"><span class="type-signature"></span>getNodesInArea<span class="signature">(box)</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get all nodes within a spatial box.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>box</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">Box3</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The box to find nodes within.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line206">line 206</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
+
+
+    </dd>
+</dl>
+
+    
 
 
 
@@ -2766,13 +3625,13 @@ Has a default implementation based on string properties.
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="MapBackend.html">MapBackend</a></li><li><a href="Mapper.html">Mapper</a></li><li><a href="RenderContext.html">RenderContext</a></li></ul><h3>Global</h3><ul><li><a href="global.html#asyncFrom">asyncFrom</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="DirEdgeRef.html">DirEdgeRef</a></li><li><a href="EdgeRef.html">EdgeRef</a></li><li><a href="EntityRef.html">EntityRef</a></li><li><a href="HookContainer.html">HookContainer</a></li><li><a href="MapBackend.html">MapBackend</a></li><li><a href="Mapper.html">Mapper</a></li><li><a href="NodeRef.html">NodeRef</a></li><li><a href="RenderContext.html">RenderContext</a></li></ul><h3>Global</h3><ul><li><a href="global.html#asyncFrom">asyncFrom</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Wed May 11 2022 01:35:44 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Thu May 12 2022 16:07:17 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>
