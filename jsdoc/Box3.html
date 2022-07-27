@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Class: HookContainer</title>
+    <title>JSDoc: Class: Box3</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Class: HookContainer</h1>
+    <h1 class="page-title">Class: Box3</h1>
 
     
 
@@ -28,11 +28,9 @@
 
 <header>
     
-        <h2><span class="attribs"><span class="type-signature"></span></span>HookContainer<span class="signature">()</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>Box3<span class="signature">()</span><span class="type-signature"></span></h2>
         
-            <div class="class-description">A simple hook system.
-Allows registering functions to be called on arbitrary events/hooks,
-and allows calling all functions registered for each event/hook.</div>
+            <div class="class-description">A rectangular bounded by two corners.</div>
         
     
 </header>
@@ -47,7 +45,7 @@ and allows calling all functions registered for each event/hook.</div>
     
 
     
-    <h4 class="name" id="HookContainer"><span class="type-signature"></span>new HookContainer<span class="signature">()</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="Box3"><span class="type-signature"></span>new Box3<span class="signature">()</span><span class="type-signature"></span></h4>
     
 
     
@@ -95,7 +93,7 @@ and allows calling all functions registered for each event/hook.</div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="hook_container.js.html">hook_container.js</a>, <a href="hook_container.js.html#line5">line 5</a>
+        <a href="geometry.js.html">geometry.js</a>, <a href="geometry.js.html#line190">line 190</a>
     </li></ul></dd>
     
 
@@ -151,7 +149,7 @@ and allows calling all functions registered for each event/hook.</div>
     
 
     
-    <h4 class="name" id="add"><span class="type-signature"></span>add<span class="signature">(hookName, hookFunction)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="line"><span class="type-signature"></span>line<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Line3.html">Line3</a>}</span></h4>
     
 
     
@@ -159,7 +157,113 @@ and allows calling all functions registered for each event/hook.</div>
 
 
 <div class="description">
-    Register a function to be called upon a specific hook.
+    Get the Line3 running between the corners of the box.
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="geometry.js.html">geometry.js</a>, <a href="geometry.js.html#line217">line 217</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="Line3.html">Line3</a></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="map"><span class="type-signature"></span>map<span class="signature">(f)</span><span class="type-signature"> &rarr; {<a href="Box3.html">Box3</a>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Apply function f to the corners of the box. Constructs a new Box3.
 </div>
 
 
@@ -195,30 +299,7 @@ and allows calling all functions registered for each event/hook.</div>
 
         <tr>
             
-                <td class="name"><code>hookName</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">string</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">The name of the hook this method will be called on.</td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>hookFunction</code></td>
+                <td class="name"><code>f</code></td>
             
 
             <td class="type">
@@ -234,7 +315,7 @@ and allows calling all functions registered for each event/hook.</div>
 
             
 
-            <td class="description last">A function that will be called when the specified hook is called.</td>
+            <td class="description last">a function that accepts a {Vector3} and returns the modified {Vector3}.</td>
         </tr>
 
     
@@ -275,7 +356,7 @@ and allows calling all functions registered for each event/hook.</div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="hook_container.js.html">hook_container.js</a>, <a href="hook_container.js.html#line14">line 14</a>
+        <a href="geometry.js.html">geometry.js</a>, <a href="geometry.js.html#line225">line 225</a>
     </li></ul></dd>
     
 
@@ -300,6 +381,24 @@ and allows calling all functions registered for each event/hook.</div>
 
 
 
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="Box3.html">Box3</a></span>
+
+
+    </dd>
+</dl>
+
+    
 
 
 
@@ -311,7 +410,7 @@ and allows calling all functions registered for each event/hook.</div>
     
 
     
-    <h4 class="name" id="call"><span class="type-signature">(async) </span>call<span class="signature">(hookName)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="scale"><span class="type-signature"></span>scale<span class="signature">(scalar)</span><span class="type-signature"> &rarr; {<a href="Box3.html">Box3</a>}</span></h4>
     
 
     
@@ -319,7 +418,7 @@ and allows calling all functions registered for each event/hook.</div>
 
 
 <div class="description">
-    Call all functions registered for a specific hook.
+    Scale both vectors in the box by a scalar.
 </div>
 
 
@@ -355,13 +454,13 @@ and allows calling all functions registered for each event/hook.</div>
 
         <tr>
             
-                <td class="name"><code>hookName</code></td>
+                <td class="name"><code>scalar</code></td>
             
 
             <td class="type">
             
                 
-<span class="param-type">string</span>
+<span class="param-type">number</span>
 
 
             
@@ -371,25 +470,7 @@ and allows calling all functions registered for each event/hook.</div>
 
             
 
-            <td class="description last">The hook to call.</td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>...args</code></td>
-            
-
-            <td class="type">
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">Remaining arguments are passed to the hook functions.</td>
+            <td class="description last"></td>
         </tr>
 
     
@@ -430,7 +511,7 @@ and allows calling all functions registered for each event/hook.</div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="hook_container.js.html">hook_container.js</a>, <a href="hook_container.js.html#line36">line 36</a>
+        <a href="geometry.js.html">geometry.js</a>, <a href="geometry.js.html#line210">line 210</a>
     </li></ul></dd>
     
 
@@ -455,6 +536,24 @@ and allows calling all functions registered for each event/hook.</div>
 
 
 
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="Box3.html">Box3</a></span>
+
+
+    </dd>
+</dl>
+
+    
 
 
 
@@ -466,7 +565,7 @@ and allows calling all functions registered for each event/hook.</div>
     
 
     
-    <h4 class="name" id="remove"><span class="type-signature"></span>remove<span class="signature">(hookName, hookFunction)</span><span class="type-signature"></span></h4>
+    <h4 class="name" id=".fromRadius"><span class="type-signature">(static) </span>fromRadius<span class="signature">(center, radius)</span><span class="type-signature"> &rarr; {<a href="Box3.html">Box3</a>}</span></h4>
     
 
     
@@ -474,7 +573,7 @@ and allows calling all functions registered for each event/hook.</div>
 
 
 <div class="description">
-    Remove a function from being called upon a specific hook.
+    Construct a new square Box3 with a central vector and a "radius" that is added and subtracted from every coordinate of that vector to form opposite corners of the box.
 </div>
 
 
@@ -510,13 +609,13 @@ and allows calling all functions registered for each event/hook.</div>
 
         <tr>
             
-                <td class="name"><code>hookName</code></td>
+                <td class="name"><code>center</code></td>
             
 
             <td class="type">
             
                 
-<span class="param-type">string</span>
+<span class="param-type"><a href="Vector3.html">Vector3</a></span>
 
 
             
@@ -526,20 +625,20 @@ and allows calling all functions registered for each event/hook.</div>
 
             
 
-            <td class="description last">The name of the hook to remove from.</td>
+            <td class="description last"></td>
         </tr>
 
     
 
         <tr>
             
-                <td class="name"><code>hookFunction</code></td>
+                <td class="name"><code>radius</code></td>
             
 
             <td class="type">
             
                 
-<span class="param-type">function</span>
+<span class="param-type">number</span>
 
 
             
@@ -549,7 +648,7 @@ and allows calling all functions registered for each event/hook.</div>
 
             
 
-            <td class="description last">The function to remove from the hook.</td>
+            <td class="description last"></td>
         </tr>
 
     
@@ -590,7 +689,7 @@ and allows calling all functions registered for each event/hook.</div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="hook_container.js.html">hook_container.js</a>, <a href="hook_container.js.html#line26">line 26</a>
+        <a href="geometry.js.html">geometry.js</a>, <a href="geometry.js.html#line201">line 201</a>
     </li></ul></dd>
     
 
@@ -615,6 +714,24 @@ and allows calling all functions registered for each event/hook.</div>
 
 
 
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="Box3.html">Box3</a></span>
+
+
+    </dd>
+</dl>
+
+    
 
 
 
