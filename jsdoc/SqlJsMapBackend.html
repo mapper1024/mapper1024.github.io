@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Global</title>
+    <title>JSDoc: Class: SqlJsMapBackend</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Global</h1>
+    <h1 class="page-title">Class: SqlJsMapBackend</h1>
 
     
 
@@ -28,7 +28,11 @@
 
 <header>
     
-        <h2></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>SqlJsMapBackend<span class="signature">(uri)</span><span class="type-signature"></span></h2>
+        
+            <div class="class-description">SQLite-backed map backend, using [sql.js](https://sql.js.org).
+Each map is an individual SQLite database file stored in memory.
+This backend is built for the online demo usecase.</div>
         
     
 </header>
@@ -38,7 +42,77 @@
     
         
 
+    
+    <h2>Constructor</h2>
+    
+
+    
+    <h4 class="name" id="SqlJsMapBackend"><span class="type-signature"></span>new SqlJsMapBackend<span class="signature">(uri)</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Ready the backend on a specific database filename.
+The backend cannot be used until #load() finishes.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
         
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>uri</code></td>
+            
+
+            <td class="type">
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">A url to be fetched and loaded as a binary sqlite database. If this is falsey, a blank map will be loaded.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
 
 
 <dl class="details">
@@ -68,6 +142,11 @@
     
 
     
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_sql_js_backend.js.html">backend/sql_js_backend.js</a>, <a href="backend_sql_js_backend.js.html#line29">line 29</a>
+    </li></ul></dd>
+    
 
     
 
@@ -77,7 +156,24 @@
 </dl>
 
 
-        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     
     </div>
 
@@ -104,7 +200,7 @@
     
 
     
-    <h4 class="name" id="asyncFrom"><span class="type-signature">(async) </span>asyncFrom<span class="signature">(asyncIterable, mapFunction)</span><span class="type-signature"> &rarr; {Array}</span></h4>
+    <h4 class="name" id="baseCreateEdge"><span class="type-signature"></span>baseCreateEdge<span class="signature">(nodeAId, nodeBId)</span><span class="type-signature"> &rarr; {number}</span></h4>
     
 
     
@@ -112,7 +208,7 @@
 
 
 <div class="description">
-    Get an array from an asynchronous iterable.
+    Create an edge atomically.
 </div>
 
 
@@ -148,13 +244,13 @@
 
         <tr>
             
-                <td class="name"><code>asyncIterable</code></td>
+                <td class="name"><code>nodeAId</code></td>
             
 
             <td class="type">
             
                 
-<span class="param-type">AsyncIterable</span>
+<span class="param-type">number</span>
 
 
             
@@ -164,26 +260,20 @@
 
             
 
-            <td class="description last">any async interable (like an asynchronous generator)</td>
+            <td class="description last">The ID of one of the nodes on the edge.</td>
         </tr>
 
     
 
         <tr>
             
-                <td class="name"><code>mapFunction</code></td>
+                <td class="name"><code>nodeBId</code></td>
             
 
             <td class="type">
             
                 
-<span class="param-type">AsyncFunction</span>
-|
-
-<span class="param-type">function</span>
-|
-
-<span class="param-type">undefined</span>
+<span class="param-type">number</span>
 
 
             
@@ -193,7 +283,7 @@
 
             
 
-            <td class="description last">a callback to map values from the asyncIterable to final return values in the array</td>
+            <td class="description last">The ID of the other node on the edge.</td>
         </tr>
 
     
@@ -234,158 +324,7 @@
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="utils.js.html">utils.js</a>, <a href="utils.js.html#line6">line 6</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">Array</span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="merge"><span class="type-signature"></span>merge<span class="signature">()</span><span class="type-signature"> &rarr; {Object}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    Merge multiply associative array objects together into a new object.
-Properties in later objects will override properties in earlier objects.
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>...args</code></td>
-            
-
-            <td class="type">
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">Objects to merge together</td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="utils.js.html">utils.js</a>, <a href="utils.js.html#line41">line 41</a>
+        <a href="backend_sql_js_backend.js.html">backend/sql_js_backend.js</a>, <a href="backend_sql_js_backend.js.html#line138">line 138</a>
     </li></ul></dd>
     
 
@@ -414,7 +353,7 @@ Properties in later objects will override properties in earlier objects.
 
         
 <div class="param-desc">
-    the merged object
+    The ID of the new edge.
 </div>
 
 
@@ -425,7 +364,7 @@ Properties in later objects will override properties in earlier objects.
     </dt>
     <dd>
         
-<span class="param-type">Object</span>
+<span class="param-type">number</span>
 
 
     </dd>
@@ -443,7 +382,7 @@ Properties in later objects will override properties in earlier objects.
     
 
     
-    <h4 class="name" id="mod"><span class="type-signature"></span>mod<span class="signature">(n, m)</span><span class="type-signature"> &rarr; {number}</span></h4>
+    <h4 class="name" id="baseCreateNode"><span class="type-signature"></span>baseCreateNode<span class="signature">(parentId)</span><span class="type-signature"> &rarr; {number}</span></h4>
     
 
     
@@ -451,8 +390,7 @@ Properties in later objects will override properties in earlier objects.
 
 
 <div class="description">
-    Calculate modulo with behavior for negative dividends.
-E.g. mod(7, 4) === 3 && mod(-11, 7) === 3
+    Create a node atomically.
 </div>
 
 
@@ -488,13 +426,16 @@ E.g. mod(7, 4) === 3 && mod(-11, 7) === 3
 
         <tr>
             
-                <td class="name"><code>n</code></td>
+                <td class="name"><code>parentId</code></td>
             
 
             <td class="type">
             
                 
 <span class="param-type">number</span>
+|
+
+<span class="param-type">null</span>
 
 
             
@@ -504,30 +445,7 @@ E.g. mod(7, 4) === 3 && mod(-11, 7) === 3
 
             
 
-            <td class="description last">the dividend</td>
-        </tr>
-
-    
-
-        <tr>
-            
-                <td class="name"><code>m</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">number</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">the divisor</td>
+            <td class="description last">The ID of the node's parent, or null if none.</td>
         </tr>
 
     
@@ -568,7 +486,7 @@ E.g. mod(7, 4) === 3 && mod(-11, 7) === 3
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="utils.js.html">utils.js</a>, <a href="utils.js.html#line32">line 32</a>
+        <a href="backend_sql_js_backend.js.html">backend/sql_js_backend.js</a>, <a href="backend_sql_js_backend.js.html#line125">line 125</a>
     </li></ul></dd>
     
 
@@ -597,7 +515,7 @@ E.g. mod(7, 4) === 3 && mod(-11, 7) === 3
 
         
 <div class="param-desc">
-    the modulo (m % n)
+    The ID of the new node.
 </div>
 
 
