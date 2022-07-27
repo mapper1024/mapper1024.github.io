@@ -32,7 +32,14 @@
         
             <div class="class-description">Abstract mapper backend, i.e. what map is being presented.
 The backend translates between the concept of a map and a database, a file, an API, or whatever else is actually being used to store the data.
-Most methods here are low-level; users of the backend should use methods from EntityRef and its children which delegate to the MapBackend.</div>
+Most methods here are low-level; users of the backend should use methods from EntityRef and its children which delegate to the MapBackend.
+
+Underlying structure:
+The backend consists of a set of entities, which can have arbitrary properties.
+A special entity, "global", is used for properties of the whole map.
+Two types of entities have specific handling to form a graph:
+"node" - an entity with a parent and positional information.
+"edge" - an entity connecting two adjacent nodes.</div>
         
     
 </header>
@@ -95,7 +102,7 @@ Most methods here are low-level; users of the backend should use methods from En
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line9">line 9</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line18">line 18</a>
     </li></ul></dd>
     
 
@@ -151,7 +158,7 @@ Most methods here are low-level; users of the backend should use methods from En
     
 
     
-    <h4 class="name" id="createEdge"><span class="type-signature">(async) </span>createEdge<span class="signature">(nodeAId, nodeBId)</span><span class="type-signature"> &rarr; {EdgeRef}</span></h4>
+    <h4 class="name" id="createEdge"><span class="type-signature">(async) </span>createEdge<span class="signature">(nodeAId, nodeBId)</span><span class="type-signature"> &rarr; {<a href="EdgeRef.html">EdgeRef</a>}</span></h4>
     
 
     
@@ -276,7 +283,7 @@ Order of node IDs does not matter.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line98">line 98</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line130">line 130</a>
     </li></ul></dd>
     
 
@@ -316,7 +323,7 @@ Order of node IDs does not matter.
     </dt>
     <dd>
         
-<span class="param-type">EdgeRef</span>
+<span class="param-type"><a href="EdgeRef.html">EdgeRef</a></span>
 
 
     </dd>
@@ -334,7 +341,7 @@ Order of node IDs does not matter.
     
 
     
-    <h4 class="name" id="createEntity"><span class="type-signature">(async) </span>createEntity<span class="signature">(type)</span><span class="type-signature"> &rarr; {EntityRef}</span></h4>
+    <h4 class="name" id="createEntity"><span class="type-signature">(async) </span>createEntity<span class="signature">(type)</span><span class="type-signature"> &rarr; {<a href="EntityRef.html">EntityRef</a>}</span></h4>
     
 
     
@@ -435,7 +442,7 @@ Order of node IDs does not matter.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line62">line 62</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line86">line 86</a>
     </li></ul></dd>
     
 
@@ -471,7 +478,7 @@ Order of node IDs does not matter.
     </dt>
     <dd>
         
-<span class="param-type">EntityRef</span>
+<span class="param-type"><a href="EntityRef.html">EntityRef</a></span>
 
 
     </dd>
@@ -489,7 +496,7 @@ Order of node IDs does not matter.
     
 
     
-    <h4 class="name" id="createNode"><span class="type-signature">(async) </span>createNode<span class="signature">(parentId)</span><span class="type-signature"> &rarr; {NodeRef}</span></h4>
+    <h4 class="name" id="createNode"><span class="type-signature">(async) </span>createNode<span class="signature">(parentId)</span><span class="type-signature"> &rarr; {<a href="NodeRef.html">NodeRef</a>}</span></h4>
     
 
     
@@ -593,7 +600,7 @@ Order of node IDs does not matter.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line71">line 71</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line95">line 95</a>
     </li></ul></dd>
     
 
@@ -629,7 +636,7 @@ Order of node IDs does not matter.
     </dt>
     <dd>
         
-<span class="param-type">NodeRef</span>
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
 
 
     </dd>
@@ -699,7 +706,7 @@ Order of node IDs does not matter.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line148">line 148</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line180">line 180</a>
     </li></ul></dd>
     
 
@@ -763,6 +770,7 @@ Order of node IDs does not matter.
 <div class="description">
     Flush the backend to storage.
 This may happen automatically, but flush forces it.
+Has a default implementation that does nothing.
 </div>
 
 
@@ -806,7 +814,7 @@ This may happen automatically, but flush forces it.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line164">line 164</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line198">line 198</a>
     </li></ul></dd>
     
 
@@ -842,7 +850,527 @@ This may happen automatically, but flush forces it.
     
 
     
-    <h4 class="name" id="getEdgeNodes"><span class="type-signature">(async) </span>getEdgeNodes<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;NodeRef>}</span></h4>
+    <h4 class="name" id="getConnectedNodes"><span class="type-signature">(async, generator) </span>getConnectedNodes<span class="signature">(nodeRef)</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get all nodes connected to the specified node by one level of edges (that is, one edge).
+Has a default implementation based on #getNodeEdges().
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>nodeRef</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The node to search for connections on.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line275">line 275</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    The connected nodes.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getDirEdgeRef"><span class="type-signature"></span>getDirEdgeRef<span class="signature">(id, startId)</span><span class="type-signature"> &rarr; {<a href="DirEdgeRef.html">DirEdgeRef</a>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Create a DirEdgeRef to an edge in this backend, starting from the specified node.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>id</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The ID of the edge to get.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>startId</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The ID of a node attached to this edge.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line223">line 223</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    Starting from the specified start ID.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="DirEdgeRef.html">DirEdgeRef</a></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getEdgeBetween"><span class="type-signature"></span>getEdgeBetween<span class="signature">(nodeAId, nodeBId)</span><span class="type-signature"> &rarr; {<a href="EdgeRef.html">EdgeRef</a>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get the edge between two nodes, if it exists.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>nodeAId</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The ID of one of the nodes on the edge to find.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>nodeBId</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The ID of the other node on the edge to find.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line250">line 250</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="EdgeRef.html">EdgeRef</a></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getEdgeNodes"><span class="type-signature">(async) </span>getEdgeNodes<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
     
 
     
@@ -894,7 +1422,7 @@ This may happen automatically, but flush forces it.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line115">line 115</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line147">line 147</a>
     </li></ul></dd>
     
 
@@ -930,7 +1458,7 @@ This may happen automatically, but flush forces it.
     </dt>
     <dd>
         
-<span class="param-type">AsyncIterable.&lt;NodeRef></span>
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
 
 
     </dd>
@@ -948,7 +1476,7 @@ This may happen automatically, but flush forces it.
     
 
     
-    <h4 class="name" id="getEdgeOtherNode"><span class="type-signature">(async) </span>getEdgeOtherNode<span class="signature">(edgeId, nodeId)</span><span class="type-signature"> &rarr; {NodeRef}</span></h4>
+    <h4 class="name" id="getEdgeOtherNode"><span class="type-signature">(async) </span>getEdgeOtherNode<span class="signature">(edgeId, nodeId)</span><span class="type-signature"> &rarr; {<a href="NodeRef.html">NodeRef</a>}</span></h4>
     
 
     
@@ -1072,7 +1600,7 @@ This may happen automatically, but flush forces it.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line126">line 126</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line158">line 158</a>
     </li></ul></dd>
     
 
@@ -1108,7 +1636,7 @@ This may happen automatically, but flush forces it.
     </dt>
     <dd>
         
-<span class="param-type">NodeRef</span>
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
 
 
     </dd>
@@ -1126,7 +1654,550 @@ This may happen automatically, but flush forces it.
     
 
     
-    <h4 class="name" id="getNodeChildren"><span class="type-signature">(async) </span>getNodeChildren<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;NodeRef>}</span></h4>
+    <h4 class="name" id="getEdgeRef"><span class="type-signature"></span>getEdgeRef<span class="signature">()</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Create an EdgeRef to an edge in this backend.
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line214">line 214</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getEntityRef"><span class="type-signature"></span>getEntityRef<span class="signature">()</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Create an EntityRef to an entity in this backend.
+Use getNodeRef, getEdgeRef, or getDirEdgeRef for greater type-specific functionality if the entity is a node or edge.
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line204">line 204</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getIntersectingEdges"><span class="type-signature">(async, generator) </span>getIntersectingEdges<span class="signature">(edgeRef, blendDistance)</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="EdgeRef.html">EdgeRef</a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get all edges within a specified blend distance that intersect with the given edge.
+Has a default implementation based on #getNodesInArea() and #NodeRef.getEdges().
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>edgeRef</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="EdgeRef.html">EdgeRef</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The edge to search for intersections on.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>blendDistance</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">How far out to search for intersections? (Necessary to avoid searching the entire map.)</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line287">line 287</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    Each intersecting edge found.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">AsyncIterable.&lt;<a href="EdgeRef.html">EdgeRef</a>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getNearbyNodes"><span class="type-signature">(async, generator) </span>getNearbyNodes<span class="signature">(nodeRef, blendDistance)</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get all nearby nodes within a specified blend distance of the specified node.
+Has a default implementation based on #getNodesInArea().
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>nodeRef</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The node that is the spatial center of the search.</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>blendDistance</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type">number</span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">How far out to look for nodes? (Necessary to avoid searching the entire map.)</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line262">line 262</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+<div class="param-desc">
+    All the discovered nodes. Does not include the original node.
+</div>
+
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getNodeChildren"><span class="type-signature">(async) </span>getNodeChildren<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
     
 
     
@@ -1178,7 +2249,7 @@ This may happen automatically, but flush forces it.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line87">line 87</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line111">line 111</a>
     </li></ul></dd>
     
 
@@ -1214,7 +2285,7 @@ This may happen automatically, but flush forces it.
     </dt>
     <dd>
         
-<span class="param-type">AsyncIterable.&lt;NodeRef></span>
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
 
 
     </dd>
@@ -1232,7 +2303,7 @@ This may happen automatically, but flush forces it.
     
 
     
-    <h4 class="name" id="getNodeEdges"><span class="type-signature">(async) </span>getNodeEdges<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;EdgeRef>}</span></h4>
+    <h4 class="name" id="getNodeEdges"><span class="type-signature">(async) </span>getNodeEdges<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="EdgeRef.html">EdgeRef</a>>}</span></h4>
     
 
     
@@ -1284,7 +2355,7 @@ This may happen automatically, but flush forces it.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line107">line 107</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line139">line 139</a>
     </li></ul></dd>
     
 
@@ -1320,7 +2391,7 @@ This may happen automatically, but flush forces it.
     </dt>
     <dd>
         
-<span class="param-type">AsyncIterable.&lt;EdgeRef></span>
+<span class="param-type">AsyncIterable.&lt;<a href="EdgeRef.html">EdgeRef</a>></span>
 
 
     </dd>
@@ -1338,7 +2409,7 @@ This may happen automatically, but flush forces it.
     
 
     
-    <h4 class="name" id="getNodeParent"><span class="type-signature">(async) </span>getNodeParent<span class="signature">()</span><span class="type-signature"> &rarr; {NodeRef|null}</span></h4>
+    <h4 class="name" id="getNodeParent"><span class="type-signature">(async) </span>getNodeParent<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="NodeRef.html">NodeRef</a>|null}</span></h4>
     
 
     
@@ -1390,7 +2461,7 @@ This may happen automatically, but flush forces it.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line79">line 79</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line103">line 103</a>
     </li></ul></dd>
     
 
@@ -1426,10 +2497,408 @@ This may happen automatically, but flush forces it.
     </dt>
     <dd>
         
-<span class="param-type">NodeRef</span>
+<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
 |
 
 <span class="param-type">null</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getNodeRef"><span class="type-signature"></span>getNodeRef<span class="signature">()</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Create a NodeRef to a node in this backend.
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line209">line 209</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getNodesInArea"><span class="type-signature"></span>getNodesInArea<span class="signature">(box)</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get all nodes within a spatial box.
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>box</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="Box3.html">Box3</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The box to find nodes within.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line231">line 231</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getNodesTouchingArea"><span class="type-signature"></span>getNodesTouchingArea<span class="signature">(box)</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get all nodes in or near a spatial box (according to their radii).
+</div>
+
+
+
+
+
+
+
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>box</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="Box3.html">Box3</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">The box to find nodes within or near.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line240">line 240</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
 
 
     </dd>
@@ -1500,7 +2969,7 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line14">line 14</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line38">line 38</a>
     </li></ul></dd>
     
 
@@ -1537,113 +3006,6 @@ Has a default implementation based on string properties.
     <dd>
         
 <span class="param-type">number</span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="getPPoint"><span class="type-signature">(async) </span>getPPoint<span class="signature">()</span><span class="type-signature"> &rarr; {Point}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    Get a Point property on an entity.
-Has a default implementation based on string properties.
-</div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line36">line 36</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">Point</span>
 
 
     </dd>
@@ -1713,7 +3075,7 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line44">line 44</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line68">line 68</a>
     </li></ul></dd>
     
 
@@ -1750,6 +3112,220 @@ Has a default implementation based on string properties.
     <dd>
         
 <span class="param-type">string</span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="getPVector3"><span class="type-signature">(async) </span>getPVector3<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Vector3.html">Vector3</a>}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Get a Vector3 property on an entity.
+Has a default implementation based on string properties.
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line60">line 60</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type"><a href="Vector3.html">Vector3</a></span>
+
+
+    </dd>
+</dl>
+
+    
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="nodeHasChildren"><span class="type-signature">(async) </span>nodeHasChildren<span class="signature">()</span><span class="type-signature"> &rarr; {boolean}</span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Check if a node has any children.
+Has a default implementation based on #getNodeChildren().
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line120">line 120</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<h5>Returns:</h5>
+
+        
+
+
+<dl>
+    <dt>
+        Type
+    </dt>
+    <dd>
+        
+<span class="param-type">boolean</span>
 
 
     </dd>
@@ -1820,7 +3396,7 @@ Has a default implementation that just removes the entity.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line134">line 134</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line166">line 166</a>
     </li></ul></dd>
     
 
@@ -1910,7 +3486,7 @@ However, calling code should use #removeEdge() and #removeNode() when applicable
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line157">line 157</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line189">line 189</a>
     </li></ul></dd>
     
 
@@ -1999,7 +3575,7 @@ Has a default implementation that just removes the entity.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line141">line 141</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line173">line 173</a>
     </li></ul></dd>
     
 
@@ -2088,96 +3664,7 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line21">line 21</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="setPPoint"><span class="type-signature">(async) </span>setPPoint<span class="signature">()</span><span class="type-signature"></span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    Set a Point property on an entity.
-Has a default implementation based on string properties.
-</div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line28">line 28</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line45">line 45</a>
     </li></ul></dd>
     
 
@@ -2265,7 +3752,96 @@ Has a default implementation based on string properties.
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend.js.html">backend.js</a>, <a href="backend.js.html#line51">line 51</a>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line75">line 75</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        
+            
+
+    
+
+    
+    <h4 class="name" id="setPVector3"><span class="type-signature">(async) </span>setPVector3<span class="signature">()</span><span class="type-signature"></span></h4>
+    
+
+    
+
+
+
+<div class="description">
+    Set a Vector3 property on an entity.
+Has a default implementation based on string properties.
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="backend_backend.js.html">backend/backend.js</a>, <a href="backend_backend.js.html#line52">line 52</a>
     </li></ul></dd>
     
 
@@ -2311,13 +3887,13 @@ Has a default implementation based on string properties.
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="MapBackend.html">MapBackend</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Box3.html">Box3</a></li><li><a href="DirEdgeRef.html">DirEdgeRef</a></li><li><a href="EdgeRef.html">EdgeRef</a></li><li><a href="EntityRef.html">EntityRef</a></li><li><a href="HookContainer.html">HookContainer</a></li><li><a href="Line3.html">Line3</a></li><li><a href="MapBackend.html">MapBackend</a></li><li><a href="Mapper.html">Mapper</a></li><li><a href="NodeRef.html">NodeRef</a></li><li><a href="Path.html">Path</a></li><li><a href="RenderContext.html">RenderContext</a></li><li><a href="Vector3.html">Vector3</a></li></ul><h3>Global</h3><ul><li><a href="global.html#asyncFrom">asyncFrom</a></li><li><a href="global.html#merge">merge</a></li><li><a href="global.html#mod">mod</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.7</a> on Thu Dec 30 2021 20:11:40 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Wed Jul 27 2022 16:19:26 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>
