@@ -48,6 +48,8 @@ class RenderContext {
 		this.parent = parent;
 		this.mapper = mapper;
 
+		this.alive = true;
+
 		this.hooks = new HookContainer();
 		this.keyboardShortcuts = [];
 
@@ -134,6 +136,7 @@ class RenderContext {
 			const where = new Vector3(event.x, event.y, 0);
 
 			this.endMouseButtonPress(event.button, where);
+			this.requestRedraw();
 		});
 
 		this.canvas.addEventListener("mousemove", (event) => {
@@ -177,8 +180,11 @@ class RenderContext {
 					}
 				}
 				else if(event.key === "c") {
-					this.setScrollOffset(Vector3.ZERO);
-					this.requestZoomChange(5);
+					asyncFrom(this.drawnNodes()).then((drawnNodes) => {
+						this.scrollOffset = Vector3.ZERO;
+						this.zoom = this.requestedZoom = 5;
+						this.recalculateTilesNodesTranslate(drawnNodes);
+					});
 				}
 			}
 			else if(event.key === "d") {
@@ -196,7 +202,7 @@ class RenderContext {
 			else if(event.key === "n") {
 				const nodeRef = await this.hoverSelection.getParent();
 				if(nodeRef) {
-					const where = await this.getNamePosition(nodeRef);
+					const where = (await this.getNamePosition(nodeRef)).where;
 
 					const input = document.createElement("input");
 					input.value = (await nodeRef.getPString("name")) || "";
@@ -268,6 +274,8 @@ class RenderContext {
 			this.requestRedraw();
 		});
 
+		this.tileRenders = {};
+
 		// Watch the parent resize so we can keep our canvas filling the whole thing.
 		this.parentObserver = new ResizeObserver(() => this.recalculateSize());
 		this.parentObserver.observe(this.parent);
@@ -278,6 +286,10 @@ class RenderContext {
 		setTimeout(this.recalculateLoop.bind(this), 10);
 		setTimeout(this.recalculateSelection.bind(this), 10);
 		setTimeout(this.applyZoom.bind(this), 10);
+	}
+
+	isPanning() {
+		return this.mouseDragEvents[2] instanceof PanEvent;
 	}
 
 	setScrollOffset(value) {
@@ -298,20 +310,31 @@ class RenderContext {
 	}
 
 	async getNamePosition(nodeRef) {
+		const screenBox = this.screenBox();
+
 		const optimal = (await nodeRef.getCenter()).map((v) => this.unitsToPixels(v));
 		let best = null;
 
 		const selection = await Selection.fromNodeRefs(this, [nodeRef]);
 
+		let tileCount = 0;
 		for(const tile of this.drawnTiles) {
 			if(tile.closestNodeRef &amp;&amp; selection.hasNodeRef(tile.closestNodeRef)) {
-				if(!best || tile.getCenter().subtract(optimal).lengthSquared() &lt; best.subtract(optimal).lengthSquared()) {
-					best = tile.getCenter();
+				const tileCenter = tile.getCenter();
+				const drawnTileCenter = tileCenter.subtract(this.scrollOffset);
+				if(drawnTileCenter.x >= screenBox.a.x &amp;&amp; drawnTileCenter.x &lt;= screenBox.b.x &amp;&amp; drawnTileCenter.y >= screenBox.a.y &amp;&amp; drawnTileCenter.y &lt;= screenBox.b.y) {
+					tileCount++;
+					if(!best || tileCenter.subtract(optimal).lengthSquared() &lt; best.subtract(optimal).lengthSquared()) {
+						best = tileCenter;
+					}
 				}
 			}
 		}
 
-		return (best || optimal).subtract(this.scrollOffset);
+		return {
+			size: Math.min(24, tileCount * 2),
+			where: (best || optimal).subtract(this.scrollOffset)
+		};
 	}
 
 	requestZoomChange(zoom) {
@@ -328,7 +351,10 @@ class RenderContext {
 				this.recalculateTilesNodesTranslate(drawnNodes);
 			});
 		}
-		setTimeout(this.applyZoom.bind(this), 10);
+
+		if(this.alive) {
+			setTimeout(this.applyZoom.bind(this), 10);
+		}
 	}
 
 	async redrawLoop() {
@@ -336,7 +362,10 @@ class RenderContext {
 			this.wantRedraw = false;
 			await this.redraw();
 		}
-		setTimeout(this.redrawLoop.bind(this), 10);
+
+		if(this.alive) {
+			setTimeout(this.redrawLoop.bind(this), 10);
+		}
 	}
 
 	async recalculateSelection() {
@@ -350,13 +379,17 @@ class RenderContext {
 				this.hoverSelection = new Selection(this, []);
 			}
 		}
+
 		if(this.wantUpdateSelection) {
 			this.wantUpdateSelection = false;
 			await this.hoverSelection.update();
 			await this.selection.update();
 			this.requestRedraw();
 		}
-		setTimeout(this.recalculateSelection.bind(this), 10);
+
+		if(this.alive) {
+			setTimeout(this.recalculateSelection.bind(this), 100);
+		}
 	}
 
 	async getClosestNodeRef(canvasPosition) {
@@ -378,7 +411,10 @@ class RenderContext {
 			this.recalculateViewport = false;
 			await this.recalculateTiles(this.recalculateUpdate.splice(0, this.recalculateUpdate.length), this.recalculateRemoved.splice(0, this.recalculateRemoved.length), this.recalculateTranslated.splice(0, this.recalculateTranslated.length));
 		}
-		setTimeout(this.recalculateLoop.bind(this), 100);
+
+		if(this.alive) {
+			setTimeout(this.recalculateLoop.bind(this), 100);
+		}
 	}
 
 	async performAction(action, addToUndoStack) {
@@ -498,7 +534,7 @@ class RenderContext {
 	recalculateTilesViewport() {
 		//this.recalculateViewport = true;
 		asyncFrom(this.visibleNodes()).then((nodes) => {
-			this.recalculateTranslated.push(...(nodes.filter(nodeRef => !this.drawnNodeIds.has(nodeRef.id) || this.offScreenDrawnNodeIds.has(nodeRef.id))));
+			this.recalculateUpdate.push(...(nodes.filter(nodeRef => !this.drawnNodeIds.has(nodeRef.id) || this.offScreenDrawnNodeIds.has(nodeRef.id))));
 		});
 	}
 
@@ -537,9 +573,14 @@ class RenderContext {
 			}
 		}
 
+		const cleared = new Set();
 		const recheckTiles = {};
 
 		const clearNodeTiles = (nodeId) => {
+			if(cleared.has(nodeId)) {
+				return;
+			}
+			cleared.add(nodeId);
 			const tX = this.nodeIdToTiles[nodeId];
 			for(const x in tX) {
 				const withinX = x >= screenBoxTiles.a.x &amp;&amp; x &lt;= screenBoxTiles.b.x;
@@ -548,21 +589,16 @@ class RenderContext {
 				}
 				const rX = recheckTiles[x];
 				const tY = this.nodeIdToTiles[nodeId][x];
-				const mtX = this.megaTiles[Math.floor(x / MegaTile.SIZE * Tile.SIZE)];
 				for(const y in tY) {
 					const withinY = y >= screenBoxTiles.a.y &amp;&amp; y &lt;= screenBoxTiles.b.y;
-					rX[y] = tY[y];
+					const tile = tY[y];
+					const megaTile = tile.megaTile;
+					rX[y] = tile;
 					delete this.tiles[x][y];
-					if(mtX !== undefined) {
-						const megaTilePositionY = Math.floor(y / MegaTile.SIZE * Tile.SIZE);
-						const megaTile = mtX[megaTilePositionY];
-						if(megaTile !== undefined) {
-							megaTile.removeNode(nodeId);
-							for(const nodeId of megaTile.popRedraw()) {
-								if(withinX &amp;&amp; withinY) {
-									updatedNodeIds.add(nodeId);
-								}
-							}
+					megaTile.removeNode(nodeId);
+					for(const nodeId of megaTile.popRedraw()) {
+						if(withinX &amp;&amp; withinY) {
+							updatedNodeIds.add(nodeId);
 						}
 					}
 				}
@@ -811,15 +847,20 @@ class RenderContext {
 		for await (const nodeRef of this.drawnNodes()) {
 			const name = await nodeRef.getPString("name");
 			if(name !== undefined) {
-				const where = await this.getNamePosition(nodeRef);
-				c.font = (this.selection.hasNodeRef(nodeRef) || this.hoverSelection.hasNodeRef(nodeRef)) ? "bold 24px serif" : "24px serif";
-				const measure = c.measureText(name);
-				c.globalAlpha = 0.25;
-				c.fillStyle = "black";
-				c.fillRect(where.x, where.y, measure.width, measure.actualBoundingBoxAscent + measure.actualBoundingBoxDescent);
-				c.globalAlpha = 1;
-				c.fillStyle = "white";
-				c.fillText(name, where.x, where.y);
+				const position = await this.getNamePosition(nodeRef);
+				const size = position.size;
+				if(size > 0) {
+					c.font = (this.selection.hasNodeRef(nodeRef) || this.hoverSelection.hasNodeRef(nodeRef)) ? `bold ${size}px serif` : `${size}px serif`;
+					const measure = c.measureText(name);
+					const height = measure.actualBoundingBoxAscent + measure.actualBoundingBoxDescent;
+					const where = position.where.subtract(new Vector3(measure.width / 2, height / 2, 0, 0));
+					c.globalAlpha = 0.25;
+					c.fillStyle = "black";
+					c.fillRect(where.x, where.y, measure.width, height);
+					c.globalAlpha = 1;
+					c.fillStyle = "white";
+					c.fillText(name, where.x, where.y);
+				}
 			}
 		}
 	}
@@ -828,18 +869,23 @@ class RenderContext {
 		const c = this.canvas.getContext("2d");
 		c.textBaseline = "top";
 		c.font = "18px sans";
-		c.fillStyle = "white";
 
 		let infoLineY = 9;
 		function infoLine(l) {
+			const measure = c.measureText(l);
+			c.globalAlpha = 0.25;
+			c.fillStyle = "black";
+			c.fillRect(18, infoLineY - 2, measure.width, measure.actualBoundingBoxAscent + measure.actualBoundingBoxDescent + 4);
+			c.globalAlpha = 1;
+			c.fillStyle = "white";
 			c.fillText(l, 18, infoLineY);
 			infoLineY += 24;
 		}
 
-		infoLine(`Brush: ${this.brush.getDescription()}`);
+		infoLine(`Brush: ${this.brush.getDescription()} | Change brush mode with (A)dd, (S)elect or (D)elete. `);
 
 		// Debug help
-		infoLine("Change brush mode with (A)dd, (S)elect or (D)elete. You can (N)ame the selected object.");
+		infoLine("You can (N)ame the selected object. Scroll to zoom.");
 		if(this.brush instanceof AddBrush) {
 			infoLine("Click to add terrain");
 			infoLine("Hold Q while scrolling to change brush type; hold W while scrolling to change brush size.");
@@ -859,7 +905,7 @@ class RenderContext {
 		});
 
 		if(this.debugMode) {
-			infoLine(`${Object.keys(Tile.getTileRenders()).length} cached tiles | ${this.drawnNodeIds.size} drawn nodes, ${this.offScreenDrawnNodeIds.size} on border`);
+			infoLine(`${Object.keys(this.tileRenders).length} cached tiles | ${this.drawnNodeIds.size} drawn nodes, ${this.offScreenDrawnNodeIds.size} on border`);
 		}
 	}
 
@@ -904,8 +950,10 @@ class RenderContext {
 		await this.clearCanvas();
 
 		await this.drawTiles();
-		await this.drawSelection();
-		await this.drawLabels();
+		if(!this.isPanning()) {
+			await this.drawSelection();
+			await this.drawLabels();
+		}
 		await this.drawBrush();
 
 		await this.drawHelp();
@@ -953,6 +1001,7 @@ class RenderContext {
 
 	/** Disconnect the render context from the page and clean up listeners. */
 	disconnect() {
+		this.alive = false;
 		this.parentObserver.disconnect();
 		this.parent.removeChild(this.canvas);
 	}
@@ -1134,13 +1183,13 @@ export { Mapper };
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Box3.html">Box3</a></li><li><a href="DirEdgeRef.html">DirEdgeRef</a></li><li><a href="EdgeRef.html">EdgeRef</a></li><li><a href="EntityRef.html">EntityRef</a></li><li><a href="HookContainer.html">HookContainer</a></li><li><a href="Line3.html">Line3</a></li><li><a href="MapBackend.html">MapBackend</a></li><li><a href="Mapper.html">Mapper</a></li><li><a href="NodeRef.html">NodeRef</a></li><li><a href="Path.html">Path</a></li><li><a href="RenderContext.html">RenderContext</a></li><li><a href="SqlJsMapBackend.html">SqlJsMapBackend</a></li><li><a href="Vector3.html">Vector3</a></li></ul><h3>Global</h3><ul><li><a href="global.html#asyncFrom">asyncFrom</a></li><li><a href="global.html#merge">merge</a></li><li><a href="global.html#mod">mod</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Action.html">Action</a></li><li><a href="Box3.html">Box3</a></li><li><a href="BulkAction.html">BulkAction</a></li><li><a href="DirEdgeRef.html">DirEdgeRef</a></li><li><a href="EdgeRef.html">EdgeRef</a></li><li><a href="EntityRef.html">EntityRef</a></li><li><a href="HookContainer.html">HookContainer</a></li><li><a href="Line3.html">Line3</a></li><li><a href="MapBackend.html">MapBackend</a></li><li><a href="Mapper.html">Mapper</a></li><li><a href="NodeRef.html">NodeRef</a></li><li><a href="Path.html">Path</a></li><li><a href="RenderContext.html">RenderContext</a></li><li><a href="SqlJsMapBackend.html">SqlJsMapBackend</a></li><li><a href="Vector3.html">Vector3</a></li></ul><h3>Global</h3><ul><li><a href="global.html#asyncFrom">asyncFrom</a></li><li><a href="global.html#merge">merge</a></li><li><a href="global.html#mod">mod</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Fri Jul 29 2022 22:53:20 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Mon Aug 01 2022 04:37:09 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Source: utils.js</title>
+    <title>JSDoc: Source: actions/action.js</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Source: utils.js</h1>
+    <h1 class="page-title">Source: actions/action.js</h1>
 
     
 
@@ -26,59 +26,34 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>/** Get an array from an asynchronous iterable.
- * @param asyncIterable {AsyncIterable} any async interable (like an asynchronous generator)
- * @param mapFunction {AsyncFunction|function|undefined} a callback to map values from the asyncIterable to final return values in the array
- * @returns {Array}
+            <pre class="prettyprint source linenums"><code>/** An Action performed on the map (such as adding a node or changing a node's property).
+ * Every action has an opposite action that can be used to create an undo/redo system.
  */
-async function asyncFrom(asyncIterable, mapFunction) {
-	const values = [];
-	if(mapFunction === undefined) {
-		for await (const value of asyncIterable) {
-			values.push(value);
-		}
+class Action {
+	/**
+	 * @param context {RenderContext} the context in which this action is performed
+	 * @param options A key-value object of various options for the action.
+	 */
+	constructor(context, options) {
+		this.context = context;
+		this.options = options;
 	}
-	else if(mapFunction.constructor.name === "AsyncFunction") {
-		for await (const value of asyncIterable) {
-			values.push(await mapFunction(value));
-		}
+
+	/**
+	 * Is the action a no-op, based on its options?
+	 * @returns {boolean}
+	 */
+	empty() {
+		return false;
 	}
-	else {
-		for await (const value of asyncIterable) {
-			values.push(mapFunction(value));
-		}
-	}
-	return values;
+
+	/** Perform the action.
+	 * @return {Action} An action that completely undoes the performed action.
+	 */
+	async perform() {}
 }
 
-/** Calculate modulo with behavior for negative dividends.
- * E.g. mod(7, 4) === 3 &amp;&amp; mod(-11, 7) === 3
- * @param n {number} the dividend
- * @param m {number} the divisor
- * @returns {number} the modulo (m % n)
- */
-function mod(n, m) {
-	return ((n % m) + m) % m;
-}
-
-/** Merge multiply associative array objects together into a new object.
- * Properties in later objects will override properties in earlier objects.
- * @param ...args Objects to merge together
- * @returns {Object} the merged object
- */
-function merge(...args) {
-	const r = {};
-	for(const arg of args) {
-		if(arg) {
-			for(const k in arg) {
-				r[k] = arg[k];
-			}
-		}
-	}
-	return r;
-}
-
-export { asyncFrom, mod, merge };
+export { Action };
 </code></pre>
         </article>
     </section>
