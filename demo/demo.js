@@ -3,20 +3,56 @@ import { Mapper, SqlJsMapBackend } from "./mapper/mapper.js";
 let renderedMap;
 
 function loadMap(map) {
-	if(renderedMap) {
-		renderedMap.disconnect();
-	}
 	map.load().then(function() {
+		if(renderedMap) {
+			renderedMap.disconnect();
+		}
+
 		const mapper = new Mapper(map);
 		renderedMap = mapper.render(document.getElementById("mapper"));
 		renderedMap.hooks.add("draw_help", function(options) {
-			options.infoLine("Shift+N to make a blank map.");
+			options.infoLine("Shift+O to open, Shift+S to save, Shift+N to make a blank map.");
 		});
 
 		renderedMap.registerKeyboardShortcut((context, event) => event.key === "N", async () => {
 			loadMap(new SqlJsMapBackend());
 		});
+
+		renderedMap.registerKeyboardShortcut((context, event) => event.key === "S", async () => {
+			const a = document.createElement("a");
+			const url = window.URL.createObjectURL(new Blob([await map.getData()], {type: "octet/stream"}));
+			a.href = url;
+			a.download = `Map at ${new Date(Date.now()).toISOString()}.map`;
+			a.click();
+			window.URL.revokeObjectURL(url);
+		});
+
+		renderedMap.registerKeyboardShortcut((context, event) => event.key === "O", async () => {
+			const input = document.createElement('input');
+			input.type = 'file';
+
+			input.onchange = async (e) => {
+				const file = e.target.files[0];
+
+				loadMap(new SqlJsMapBackend({
+					loadFrom: "data",
+					data: new Uint8Array(await file.arrayBuffer()),
+				}));
+			}
+
+			input.click();
+		});
+	}).catch(error => {
+		alert(`Could not load the map: ${error}`);
 	});
 }
 
-loadMap(new SqlJsMapBackend("./mapper/samples/sample_map.map"));
+loadMap(new SqlJsMapBackend({
+	loadFrom: "url",
+	url: "./mapper/samples/sample_map.map",
+}));
+
+window.addEventListener("beforeunload", function (e) {
+	e.preventDefault();
+	e.returnValue = "Did you save any changes?";
+});
