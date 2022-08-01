@@ -1,4 +1,4 @@
-import { Mapper, SqlJsMapBackend } from "./mapper/mapper.js";
+import { Mapper, SqlJsMapBackend } from "./mapper/index.js";
 
 let renderedMap;
 
@@ -28,8 +28,8 @@ function loadMap(map) {
 		});
 
 		renderedMap.registerKeyboardShortcut((context, event) => event.key === "O", async () => {
-			const input = document.createElement('input');
-			input.type = 'file';
+			const input = document.createElement("input");
+			input.type = "file";
 
 			input.onchange = async (e) => {
 				const file = e.target.files[0];
@@ -38,7 +38,7 @@ function loadMap(map) {
 					loadFrom: "data",
 					data: new Uint8Array(await file.arrayBuffer()),
 				}));
-			}
+			};
 
 			input.click();
 		});
