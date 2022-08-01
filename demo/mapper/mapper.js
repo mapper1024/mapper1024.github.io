@@ -429,6 +429,9 @@ class EntityRef {
 		return this.backend.entityExists(this.id);
 	}
 
+	/** Check if this entity is valid (i.e. not deleted).
+	 * @returns {boolean}
+	 */
 	async valid() {
 		return this.backend.entityValid(this.id);
 	}
@@ -493,6 +496,18 @@ class EntityRef {
 class NodeRef extends EntityRef {
 	constructor(id, backend) {
 		super(id, backend);
+	}
+
+	/** Called when the node is created. */
+	async create() {
+		await this.clearParentCache();
+	}
+
+	async clearParentCache() {
+		const parent = await this.getParent();
+		if(parent) {
+			delete parent.cache.children;
+		}
 	}
 
 	/** Get the parent node of this node, if it exists.
@@ -577,12 +592,12 @@ class NodeRef extends EntityRef {
 
 	/** Remove this entity from the database. */
 	async remove() {
-		delete (await this.getParent()).cache.children;
+		await this.clearParentCache();
 		return this.backend.removeNode(this.id);
 	}
 
 	async unremove() {
-		delete (await this.getParent()).cache.children;
+		await this.clearParentCache();
 		return super.unremove();
 	}
 }
@@ -708,6 +723,14 @@ class NodeTypeRegistry {
 
 		this.registerType(new NodeType("rocks", {
 			color: "gray",
+		}));
+
+		this.registerType(new NodeType("road", {
+			color: "brown",
+		}));
+
+		this.registerType(new NodeType("buildings", {
+			color: "yellow",
 		}));
 	}
 
@@ -1040,20 +1063,28 @@ async function SqlJs() {
 class SqlJsMapBackend extends MapBackend {
 	/** Ready the backend on a specific database filename.
 	 * The backend cannot be used until #load() finishes.
-	 * @param uri A url to be fetched and loaded as a binary sqlite database. If this is falsey, a blank map will be loaded.
+	 * Options may have keys:
+	 * - loadFrom: "none", "url", or "data"
 	 */
-	constructor(uri, options) {
+	constructor(options) {
 		super();
 
-		this.uri = uri;
-		this.options = merge({}, options);
+		this.options = merge({
+			loadFrom: "none",
+			url: null,
+			data: null,
+			buildDatabase: true,
+		}, options);
 	}
 
 	async load() {
 		const Database = (await SqlJs()).Database;
 
-		if(this.uri) {
-			this.db = new Database(new Uint8Array(await (await fetch(this.uri)).arrayBuffer()));
+		if(this.options.loadFrom === "url") {
+			this.db = new Database(new Uint8Array(await (await fetch(this.options.url)).arrayBuffer()));
+		}
+		else if(this.options.loadFrom === "data") {
+			this.db = new Database(this.options.data);
 		}
 		else {
 			this.db = new Database();
@@ -1066,15 +1097,22 @@ class SqlJsMapBackend extends MapBackend {
 
 		// Node table and trigger to delete the corresponding entity when a node is deleted.
 		this.db.run("CREATE TABLE IF NOT EXISTS node (entityid INT PRIMARY KEY, parentid INT, FOREIGN KEY (entityid) REFERENCES entity(entityid) ON DELETE CASCADE, FOREIGN KEY (parentid) REFERENCES node(entityid) ON DELETE CASCADE)");
-		this.db.run("CREATE TRIGGER IF NOT EXISTS r_nodedeleted AFTER DELETE ON node FOR EACH ROW BEGIN DELETE FROM entity WHERE entityid = OLD.entityid; END");
+
+		if(this.options.buildDatabase) {
+			this.db.run("CREATE TRIGGER IF NOT EXISTS r_nodedeleted AFTER DELETE ON node FOR EACH ROW BEGIN DELETE FROM entity WHERE entityid = OLD.entityid; END");
+		}
 
 		// Triggers to cascade invalidation
-		this.db.run("CREATE TRIGGER IF NOT EXISTS r_nodeinvalidated_children AFTER UPDATE OF valid ON entity WHEN NEW.type = 'node' AND NEW.valid = false BEGIN UPDATE entity SET valid = FALSE WHERE entityid IN (SELECT entityid FROM node WHERE parentid = NEW.entityid); END");
-		this.db.run("CREATE TRIGGER IF NOT EXISTS r_nodeinvalidated_edges AFTER UPDATE OF valid ON entity WHEN NEW.type = 'node' AND NEW.valid = false BEGIN UPDATE entity SET valid = FALSE WHERE entityid IN (SELECT edgeid FROM edge WHERE nodeid = NEW.entityid); END");
+		if(this.options.buildDatabase) {
+			this.db.run("CREATE TRIGGER IF NOT EXISTS r_nodeinvalidated_children AFTER UPDATE OF valid ON entity WHEN NEW.type = 'node' AND NEW.valid = false BEGIN UPDATE entity SET valid = FALSE WHERE entityid IN (SELECT entityid FROM node WHERE parentid = NEW.entityid); END");
+			this.db.run("CREATE TRIGGER IF NOT EXISTS r_nodeinvalidated_edges AFTER UPDATE OF valid ON entity WHEN NEW.type = 'node' AND NEW.valid = false BEGIN UPDATE entity SET valid = FALSE WHERE entityid IN (SELECT edgeid FROM edge WHERE nodeid = NEW.entityid); END");
+		}
 
 		// Similar to nodes, a edge's corresponding entity will be deleted via trigger as soon as the edge is deleted.
 		this.db.run("CREATE TABLE IF NOT EXISTS edge (edgeid INT, nodeid INT, PRIMARY KEY (edgeid, nodeid) FOREIGN KEY (edgeid) REFERENCES entity(entityid) ON DELETE CASCADE, FOREIGN KEY (nodeid) REFERENCES node(entityid) ON DELETE CASCADE)");
-		this.db.run("CREATE TRIGGER IF NOT EXISTS r_edgedeleted AFTER DELETE ON edge FOR EACH ROW BEGIN DELETE FROM entity WHERE entityid = OLD.edgeid; END");
+		if(this.options.buildDatabase) {
+			this.db.run("CREATE TRIGGER IF NOT EXISTS r_edgedeleted AFTER DELETE ON edge FOR EACH ROW BEGIN DELETE FROM entity WHERE entityid = OLD.edgeid; END");
+		}
 
 		/* Multiple types of property are possible, all combined into one table for now.
 		 * Each property can be (with columns):
@@ -1119,15 +1157,17 @@ class SqlJsMapBackend extends MapBackend {
 		/* Find or create the global entity.
 		 * There can be only one.
 		 */
-		this.db.run("BEGIN EXCLUSIVE TRANSACTION");
-		let globalEntityIdRow = this.db.prepare("SELECT entityid FROM entity WHERE type = 'global'").get();
-		if(globalEntityIdRow.length === 0) {
-			this.global = this.getEntityRef(this.baseCreateEntity("global"));
+		if(this.options.buildDatabase) {
+			this.db.run("BEGIN EXCLUSIVE TRANSACTION");
+			let globalEntityIdRow = this.db.prepare("SELECT entityid FROM entity WHERE type = 'global'").get({});
+			if(globalEntityIdRow.length === 0) {
+				this.global = this.getEntityRef(this.baseCreateEntity("global"));
+			}
+			else {
+				this.global = this.getEntityRef(globalEntityIdRow[0]);
+			}
+			this.db.run("COMMIT");
 		}
-		else {
-			this.global = this.getEntityRef(globalEntityIdRow[0]);
-		}
-		this.db.run("COMMIT");
 
 		/** Create a node atomically.
 		 * @param parentId {number|null} The ID of the node's parent, or null if none.
@@ -1159,6 +1199,28 @@ class SqlJsMapBackend extends MapBackend {
 		await this.hooks.call("loaded");
 	}
 
+	async getData() {
+		// sql.js must close the database before exporting, but we want to export while the database is open.
+		// Easy solution: clone the database manually before exporting.
+		const clone = new SqlJsMapBackend({buildDatabase: false});
+		await clone.load();
+
+		this.db.run("BEGIN EXCLUSIVE TRANSACTION");
+
+		for(const table of ["entity", "property", "node", "edge"]) {
+			const statement = this.db.prepare(`SELECT * FROM ${table}`);
+			const placeholders = statement.getColumnNames().map(() => "?");
+			const sql = `INSERT INTO ${table} VALUES (${placeholders.join(", ")})`;
+			while(statement.step()) {
+				clone.db.run(sql, statement.get());
+			}
+		}
+
+		this.db.run("COMMIT");
+
+		return clone.db.export();
+	}
+
 	baseCreateEntity(type) {
 		this.s_createEntity.run({$type: type});
 		return this.db.exec("SELECT last_insert_rowid()")[0].values[0][0];
@@ -1177,7 +1239,9 @@ class SqlJsMapBackend extends MapBackend {
 	}
 
 	async createNode(parentId) {
-		return this.getNodeRef(this.baseCreateNode(parentId));
+		const nodeRef = this.getNodeRef(this.baseCreateNode(parentId));
+		await nodeRef.create();
+		return nodeRef;
 	}
 
 	async createEdge(nodeAId, nodeBId) {
@@ -1292,7 +1356,7 @@ class Brush {
 		this.context = context;
 
 		this.size = 1;
-		this.maxSize = 10;
+		this.maxSize = 20;
 		this.lastSizeChange = performance.now();
 	}
 
@@ -1301,7 +1365,7 @@ class Brush {
 	}
 
 	getRadius() {
-		return this.size * 25;
+		return this.size * 15;
 	}
 
 	sizeInMeters() {
@@ -1383,19 +1447,37 @@ class DragEvent {
 	}
 }
 
+/** An Action performed on the map (such as adding a node or changing a node's property).
+ * Every action has an opposite action that can be used to create an undo/redo system.
+ */
 class Action {
+	/**
+	 * @param context {RenderContext} the context in which this action is performed
+	 * @param options A key-value object of various options for the action.
+	 */
 	constructor(context, options) {
 		this.context = context;
 		this.options = options;
 	}
 
+	/**
+	 * Is the action a no-op, based on its options?
+	 * @returns {boolean}
+	 */
 	empty() {
-		return true;
+		return false;
 	}
 
+	/** Perform the action.
+	 * @return {Action} An action that completely undoes the performed action.
+	 */
 	async perform() {}
 }
 
+/** An action composed of several actions. Will handle creating the needed bulk action to undo the actions in order.
+ * Options:
+ * - actions: An array of actions to perform.
+ */
 class BulkAction extends Action {
 	async perform() {
 		const actions = [];
@@ -1959,7 +2041,7 @@ dirs.NE = dirs.N.add(dirs.E);
 dirs.SW = dirs.S.add(dirs.W);
 dirs.SE = dirs.S.add(dirs.E);
 
-const tileRenders = {};
+const dirKeys = Object.keys(dirs);
 
 class Tile {
 	constructor(megaTile, corner) {
@@ -1971,6 +2053,7 @@ class Tile {
 		this.closestNodeRef = null;
 		this.closestNodeType = null;
 		this.closestNodeDistance = Infinity;
+		this.closestNodeRadiusInUnits = Infinity;
 		this.closestNodeIsOverpowering = false;
 	}
 
@@ -1993,15 +2076,17 @@ class Tile {
 	async addNode(nodeRef) {
 		const nodeCenter = (await nodeRef.getCenter()).map((a) => this.context.unitsToPixels(a));
 		const distance = nodeCenter.subtract(this.getCenter()).length();
-		const nodeRadius = this.context.unitsToPixels(await nodeRef.getRadius());
-		if(distance <= nodeRadius + Tile.SIZE / 2) {
+		const nodeRadiusInUnits = await nodeRef.getRadius();
+		const nodeRadiusInPixels = this.context.unitsToPixels(nodeRadiusInUnits);
+		if(distance <= nodeRadiusInPixels + Tile.SIZE / 2 && nodeRadiusInPixels >= Tile.SIZE / 8) {
 			this.nearbyNodes.set(nodeRef.id, nodeRef);
 			this.megaTile.addNode(nodeRef.id);
 
-			if(distance < this.closestNodeDistance) {
+			if(distance < this.closestNodeDistance && nodeRadiusInUnits <= this.closestNodeRadiusInUnits) {
 				this.closestNodeRef = nodeRef;
+				this.closestNodeRadiusInUnits = nodeRadiusInUnits;
 				this.closestNodeType = await nodeRef.getType();
-				this.closestNodeIsOverpowering = distance < nodeRadius - Tile.SIZE / 2;
+				this.closestNodeIsOverpowering = distance < nodeRadiusInPixels - Tile.SIZE / 2;
 			}
 
 			return true;
@@ -2017,7 +2102,7 @@ class Tile {
 
 	* getNeighborTiles() {
 		const origin = this.getTilePosition();
-		for(const dirName in dirs) {
+		for(const dirName of dirKeys) {
 			const dir = dirs[dirName];
 			const otherTilePosition = origin.add(dir);
 			const otherTileX = this.context.tiles[otherTilePosition.x];
@@ -2042,6 +2127,7 @@ class Tile {
 		}
 
 		const keyString = key.join(" ");
+		const tileRenders = this.context.tileRenders;
 		let canvas = tileRenders[keyString];
 
 		if(canvas === undefined) {
@@ -2049,13 +2135,17 @@ class Tile {
 			canvas.width = Tile.SIZE;
 			canvas.height = Tile.SIZE;
 
-			const neighbors = {};
+			let neighbors;
 
-			for(const [dirName, dir, otherTile] of this.getNeighborTiles()) {
-				neighbors[dirName] = {
-					dir: dir,
-					type: (otherTile && otherTile.closestNodeType) ? otherTile.closestNodeType : null,
-				};
+			if(!this.closestNodeIsOverpowering) {
+				neighbors = {};
+
+				for(const [dirName, dir, otherTile] of this.getNeighborTiles()) {
+					neighbors[dirName] = {
+						dir: dir,
+						type: (otherTile && otherTile.closestNodeType) ? otherTile.closestNodeType : null,
+					};
+				}
 			}
 
 			await Tile.renderMaster(canvas, this.closestNodeType, neighbors);
@@ -2070,9 +2160,11 @@ class Tile {
 
 		const colors = {
 			grass: ["green", "forestgreen", "mediumseagreen", "seagreen"],
-			water: ["blue", "skyblue", "aqua", "deepskyblue"],
+			water: ["deepskyblue", "darkblue", "seagreen"],
 			forest: ["darkgreen", "forestgreen", "darkseagreen", "olivedrab"],
 			rocks: ["slategray", "black", "gray", "lightslategray", "darkgray"],
+			road: ["brown", "darkgoldenrod", "olive", "tan", "wheat", "sandybrown"],
+			buildings: ["yellow", "sandybrown", "darkgoldenrod", "gold", "orange"],
 			null: ["black", "darkgray", "darkseagreen"],
 		};
 
@@ -2093,33 +2185,38 @@ class Tile {
 		}
 
 		const ourColors = getOurColors();
-		const pixelSize = pixelSizes[type.id] || 1;
+		const pixelSize = pixelSizes[type.id] || 2;
+		const hasNeighbors = !!neighbors;
 
 		for(let x = 0; x < canvas.width; x += pixelSize) {
 			for(let y = 0; y < canvas.height; y += pixelSize) {
-				const pxv = (new Vector3(x, y, 0)).subtract(Tile.HALF_SIZE_VECTOR).divideScalar(Tile.SIZE);
+				let ucolors;
 
-				let neighborColors = ourColors;
-				let closestDistance = Infinity;
+				if(hasNeighbors) {
+					const pxv = (new Vector3(x, y, 0)).subtract(Tile.HALF_SIZE_VECTOR).divideScalar(Tile.SIZE);
 
-				for(const dirName in dirs) {
-					const distance = dirs[dirName].subtract(pxv).length();
-					if(closestDistance > distance) {
-						const neighborType = neighbors[dirName].type;
-						neighborColors = neighborType ? getTypeColors(neighborType) : colors["null"];
-						closestDistance = distance;
+					let neighborColors = ourColors;
+					let closestDistance = Infinity;
+
+					for(const dirName of dirKeys) {
+						const distance = dirs[dirName].subtract(pxv).length();
+						if(closestDistance > distance) {
+							const neighborType = neighbors[dirName].type;
+							neighborColors = neighborType ? getTypeColors(neighborType) : colors["null"];
+							closestDistance = distance;
+						}
 					}
+
+					ucolors = Math.random() < closestDistance ? ourColors : neighborColors;
+				}
+				else {
+					ucolors = ourColors;
 				}
 
-				const ucolors = Math.random() < closestDistance ? ourColors : neighborColors;
 				c.fillStyle = ucolors[Math.floor(Math.random() * ucolors.length)];
 				c.fillRect(x, y, pixelSize, pixelSize);
 			}
 		}
-	}
-
-	static getTileRenders() {
-		return tileRenders;
 	}
 }
 
@@ -2189,6 +2286,8 @@ class RenderContext {
 	constructor(parent, mapper) {
 		this.parent = parent;
 		this.mapper = mapper;
+
+		this.alive = true;
 
 		this.hooks = new HookContainer();
 		this.keyboardShortcuts = [];
@@ -2276,6 +2375,7 @@ class RenderContext {
 			const where = new Vector3(event.x, event.y, 0);
 
 			this.endMouseButtonPress(event.button, where);
+			this.requestRedraw();
 		});
 
 		this.canvas.addEventListener("mousemove", (event) => {
@@ -2318,8 +2418,11 @@ class RenderContext {
 					}
 				}
 				else if(event.key === "c") {
-					this.setScrollOffset(Vector3.ZERO);
-					this.requestZoomChange(5);
+					asyncFrom(this.drawnNodes()).then((drawnNodes) => {
+						this.scrollOffset = Vector3.ZERO;
+						this.zoom = this.requestedZoom = 5;
+						this.recalculateTilesNodesTranslate(drawnNodes);
+					});
 				}
 			}
 			else if(event.key === "d") {
@@ -2337,7 +2440,7 @@ class RenderContext {
 			else if(event.key === "n") {
 				const nodeRef = await this.hoverSelection.getParent();
 				if(nodeRef) {
-					const where = await this.getNamePosition(nodeRef);
+					const where = (await this.getNamePosition(nodeRef)).where;
 
 					const input = document.createElement("input");
 					input.value = (await nodeRef.getPString("name")) || "";
@@ -2409,6 +2512,8 @@ class RenderContext {
 			this.requestRedraw();
 		});
 
+		this.tileRenders = {};
+
 		// Watch the parent resize so we can keep our canvas filling the whole thing.
 		this.parentObserver = new ResizeObserver(() => this.recalculateSize());
 		this.parentObserver.observe(this.parent);
@@ -2419,6 +2524,10 @@ class RenderContext {
 		setTimeout(this.recalculateLoop.bind(this), 10);
 		setTimeout(this.recalculateSelection.bind(this), 10);
 		setTimeout(this.applyZoom.bind(this), 10);
+	}
+
+	isPanning() {
+		return this.mouseDragEvents[2] instanceof PanEvent;
 	}
 
 	setScrollOffset(value) {
@@ -2439,20 +2548,31 @@ class RenderContext {
 	}
 
 	async getNamePosition(nodeRef) {
+		const screenBox = this.screenBox();
+
 		const optimal = (await nodeRef.getCenter()).map((v) => this.unitsToPixels(v));
 		let best = null;
 
 		const selection = await Selection.fromNodeRefs(this, [nodeRef]);
 
+		let tileCount = 0;
 		for(const tile of this.drawnTiles) {
 			if(tile.closestNodeRef && selection.hasNodeRef(tile.closestNodeRef)) {
-				if(!best || tile.getCenter().subtract(optimal).lengthSquared() < best.subtract(optimal).lengthSquared()) {
-					best = tile.getCenter();
+				const tileCenter = tile.getCenter();
+				const drawnTileCenter = tileCenter.subtract(this.scrollOffset);
+				if(drawnTileCenter.x >= screenBox.a.x && drawnTileCenter.x <= screenBox.b.x && drawnTileCenter.y >= screenBox.a.y && drawnTileCenter.y <= screenBox.b.y) {
+					tileCount++;
+					if(!best || tileCenter.subtract(optimal).lengthSquared() < best.subtract(optimal).lengthSquared()) {
+						best = tileCenter;
+					}
 				}
 			}
 		}
 
-		return (best || optimal).subtract(this.scrollOffset);
+		return {
+			size: Math.min(24, tileCount * 2),
+			where: (best || optimal).subtract(this.scrollOffset)
+		};
 	}
 
 	requestZoomChange(zoom) {
@@ -2469,7 +2589,10 @@ class RenderContext {
 				this.recalculateTilesNodesTranslate(drawnNodes);
 			});
 		}
-		setTimeout(this.applyZoom.bind(this), 10);
+
+		if(this.alive) {
+			setTimeout(this.applyZoom.bind(this), 10);
+		}
 	}
 
 	async redrawLoop() {
@@ -2477,7 +2600,10 @@ class RenderContext {
 			this.wantRedraw = false;
 			await this.redraw();
 		}
-		setTimeout(this.redrawLoop.bind(this), 10);
+
+		if(this.alive) {
+			setTimeout(this.redrawLoop.bind(this), 10);
+		}
 	}
 
 	async recalculateSelection() {
@@ -2491,13 +2617,17 @@ class RenderContext {
 				this.hoverSelection = new Selection(this, []);
 			}
 		}
+
 		if(this.wantUpdateSelection) {
 			this.wantUpdateSelection = false;
 			await this.hoverSelection.update();
 			await this.selection.update();
 			this.requestRedraw();
 		}
-		setTimeout(this.recalculateSelection.bind(this), 10);
+
+		if(this.alive) {
+			setTimeout(this.recalculateSelection.bind(this), 100);
+		}
 	}
 
 	async getClosestNodeRef(canvasPosition) {
@@ -2519,7 +2649,10 @@ class RenderContext {
 			this.recalculateViewport = false;
 			await this.recalculateTiles(this.recalculateUpdate.splice(0, this.recalculateUpdate.length), this.recalculateRemoved.splice(0, this.recalculateRemoved.length), this.recalculateTranslated.splice(0, this.recalculateTranslated.length));
 		}
-		setTimeout(this.recalculateLoop.bind(this), 100);
+
+		if(this.alive) {
+			setTimeout(this.recalculateLoop.bind(this), 100);
+		}
 	}
 
 	async performAction(action, addToUndoStack) {
@@ -2639,7 +2772,7 @@ class RenderContext {
 	recalculateTilesViewport() {
 		//this.recalculateViewport = true;
 		asyncFrom(this.visibleNodes()).then((nodes) => {
-			this.recalculateTranslated.push(...(nodes.filter(nodeRef => !this.drawnNodeIds.has(nodeRef.id) || this.offScreenDrawnNodeIds.has(nodeRef.id))));
+			this.recalculateUpdate.push(...(nodes.filter(nodeRef => !this.drawnNodeIds.has(nodeRef.id) || this.offScreenDrawnNodeIds.has(nodeRef.id))));
 		});
 	}
 
@@ -2678,9 +2811,14 @@ class RenderContext {
 			}
 		}
 
+		const cleared = new Set();
 		const recheckTiles = {};
 
 		const clearNodeTiles = (nodeId) => {
+			if(cleared.has(nodeId)) {
+				return;
+			}
+			cleared.add(nodeId);
 			const tX = this.nodeIdToTiles[nodeId];
 			for(const x in tX) {
 				const withinX = x >= screenBoxTiles.a.x && x <= screenBoxTiles.b.x;
@@ -2689,21 +2827,16 @@ class RenderContext {
 				}
 				const rX = recheckTiles[x];
 				const tY = this.nodeIdToTiles[nodeId][x];
-				const mtX = this.megaTiles[Math.floor(x / MegaTile.SIZE * Tile.SIZE)];
 				for(const y in tY) {
 					const withinY = y >= screenBoxTiles.a.y && y <= screenBoxTiles.b.y;
-					rX[y] = tY[y];
+					const tile = tY[y];
+					const megaTile = tile.megaTile;
+					rX[y] = tile;
 					delete this.tiles[x][y];
-					if(mtX !== undefined) {
-						const megaTilePositionY = Math.floor(y / MegaTile.SIZE * Tile.SIZE);
-						const megaTile = mtX[megaTilePositionY];
-						if(megaTile !== undefined) {
-							megaTile.removeNode(nodeId);
-							for(const nodeId of megaTile.popRedraw()) {
-								if(withinX && withinY) {
-									updatedNodeIds.add(nodeId);
-								}
-							}
+					megaTile.removeNode(nodeId);
+					for(const nodeId of megaTile.popRedraw()) {
+						if(withinX && withinY) {
+							updatedNodeIds.add(nodeId);
 						}
 					}
 				}
@@ -2952,15 +3085,20 @@ class RenderContext {
 		for await (const nodeRef of this.drawnNodes()) {
 			const name = await nodeRef.getPString("name");
 			if(name !== undefined) {
-				const where = await this.getNamePosition(nodeRef);
-				c.font = (this.selection.hasNodeRef(nodeRef) || this.hoverSelection.hasNodeRef(nodeRef)) ? "bold 24px serif" : "24px serif";
-				const measure = c.measureText(name);
-				c.globalAlpha = 0.25;
-				c.fillStyle = "black";
-				c.fillRect(where.x, where.y, measure.width, measure.actualBoundingBoxAscent + measure.actualBoundingBoxDescent);
-				c.globalAlpha = 1;
-				c.fillStyle = "white";
-				c.fillText(name, where.x, where.y);
+				const position = await this.getNamePosition(nodeRef);
+				const size = position.size;
+				if(size > 0) {
+					c.font = (this.selection.hasNodeRef(nodeRef) || this.hoverSelection.hasNodeRef(nodeRef)) ? `bold ${size}px serif` : `${size}px serif`;
+					const measure = c.measureText(name);
+					const height = measure.actualBoundingBoxAscent + measure.actualBoundingBoxDescent;
+					const where = position.where.subtract(new Vector3(measure.width / 2, height / 2, 0, 0));
+					c.globalAlpha = 0.25;
+					c.fillStyle = "black";
+					c.fillRect(where.x, where.y, measure.width, height);
+					c.globalAlpha = 1;
+					c.fillStyle = "white";
+					c.fillText(name, where.x, where.y);
+				}
 			}
 		}
 	}
@@ -2969,18 +3107,23 @@ class RenderContext {
 		const c = this.canvas.getContext("2d");
 		c.textBaseline = "top";
 		c.font = "18px sans";
-		c.fillStyle = "white";
 
 		let infoLineY = 9;
 		function infoLine(l) {
+			const measure = c.measureText(l);
+			c.globalAlpha = 0.25;
+			c.fillStyle = "black";
+			c.fillRect(18, infoLineY - 2, measure.width, measure.actualBoundingBoxAscent + measure.actualBoundingBoxDescent + 4);
+			c.globalAlpha = 1;
+			c.fillStyle = "white";
 			c.fillText(l, 18, infoLineY);
 			infoLineY += 24;
 		}
 
-		infoLine(`Brush: ${this.brush.getDescription()}`);
+		infoLine(`Brush: ${this.brush.getDescription()} | Change brush mode with (A)dd, (S)elect or (D)elete. `);
 
 		// Debug help
-		infoLine("Change brush mode with (A)dd, (S)elect or (D)elete. You can (N)ame the selected object.");
+		infoLine("You can (N)ame the selected object. Scroll to zoom.");
 		if(this.brush instanceof AddBrush) {
 			infoLine("Click to add terrain");
 			infoLine("Hold Q while scrolling to change brush type; hold W while scrolling to change brush size.");
@@ -3000,7 +3143,7 @@ class RenderContext {
 		});
 
 		if(this.debugMode) {
-			infoLine(`${Object.keys(Tile.getTileRenders()).length} cached tiles | ${this.drawnNodeIds.size} drawn nodes, ${this.offScreenDrawnNodeIds.size} on border`);
+			infoLine(`${Object.keys(this.tileRenders).length} cached tiles | ${this.drawnNodeIds.size} drawn nodes, ${this.offScreenDrawnNodeIds.size} on border`);
 		}
 	}
 
@@ -3045,8 +3188,10 @@ class RenderContext {
 		await this.clearCanvas();
 
 		await this.drawTiles();
-		await this.drawSelection();
-		await this.drawLabels();
+		if(!this.isPanning()) {
+			await this.drawSelection();
+			await this.drawLabels();
+		}
 		await this.drawBrush();
 
 		await this.drawHelp();
@@ -3094,6 +3239,7 @@ class RenderContext {
 
 	/** Disconnect the render context from the page and clean up listeners. */
 	disconnect() {
+		this.alive = false;
 		this.parentObserver.disconnect();
 		this.parent.removeChild(this.canvas);
 	}
@@ -3262,6 +3408,6 @@ class Mapper {
 }
 
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.0.30";
+let version = "0.0.31";
 
 export { Box3, HookContainer, Line3, MapBackend, Mapper, Path, SqlJsMapBackend, Vector3, asyncFrom, merge, mod, version };
