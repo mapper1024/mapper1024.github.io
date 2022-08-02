@@ -1357,6 +1357,16 @@ class Brush {
 
 		this.size = 1;
 		this.maxSize = 20;
+	}
+
+	displayButton(button) {
+		button.innerText = this.constructor.name;
+	}
+
+	displaySidebar(brushBar, container) {
+	}
+
+	switchTo() {
 		this.lastSizeChange = performance.now();
 	}
 
@@ -1379,11 +1389,13 @@ class Brush {
 	shrink() {
 		this.size = Math.max(1, this.size - 1);
 		this.lastSizeChange = performance.now();
+		this.context.hooks.call("brush_size_change", this);
 	}
 
 	enlarge() {
 		this.size = Math.min(this.maxSize, this.size + 1);
 		this.lastSizeChange = performance.now();
+		this.context.hooks.call("brush_size_change", this);
 	}
 
 	sizeRecentlyChanged() {
@@ -1680,7 +1692,83 @@ class AddBrush extends Brush {
 
 		this.nodeTypeIndex = 0;
 		this.nodeTypes = Array.from(this.context.mapper.backend.nodeTypeRegistry.getTypes());
+		this.lastTypeChange = 0;
+
+		this.hooks = new HookContainer();
+
+		this.setNodeTypeIndex(0);
+	}
+
+	displayButton(button) {
+		button.innerText = "(A)dd";
+		button.title = "Add Objects";
+	}
+
+	displaySidebar(brushbar, container) {
+		const list = document.createElement("ul");
+		list.setAttribute("class", "mapper1024_add_brush_strip");
+		container.appendChild(list);
+
+		for(const nodeType of this.nodeTypes) {
+			const index = this.nodeTypes.indexOf(nodeType);
+
+			const li = document.createElement("li");
+			list.appendChild(li);
+
+			const button = document.createElement("canvas");
+			li.appendChild(button);
+
+			button.width = brushbar.size.x - 8;
+			button.height = brushbar.size.x - 8;
+
+			button.title = nodeType.id;
+
+			const c = button.getContext("2d");
+			c.fillStyle = nodeType.def.color;
+			c.fillRect(0, 0, button.width, button.height);
+
+			c.textBaseline = "top";
+			c.font = "12px sans";
+
+			const text = nodeType.id;
+			const firstMeasure = c.measureText(text);
+
+			c.font = `${button.width / firstMeasure.width * 12}px sans`;
+			const measure = c.measureText(text);
+			const height = Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent);
+			c.globalAlpha = 0.25;
+			c.fillStyle = "black";
+			c.fillRect(0, 0, measure.width, height);
+			c.globalAlpha = 1;
+			c.fillStyle = "white";
+			c.fillText(text, 0, 0);
+
+			button.onclick = () => {
+				this.setNodeTypeIndex(index);
+				this.context.focus();
+			};
+
+			const update = () => {
+				if(this.nodeTypeIndex === index) {
+					button.style.border = "3px dotted black";
+				}
+				else {
+					button.style.border = "0";
+				}
+			};
+
+			update();
+
+			this.hooks.add("type_changed", update);
+		}
+	}
+
+	setNodeTypeIndex(index) {
+		this.nodeTypeIndex = index;
+		this.wrapIndex();
 		this.lastTypeChange = performance.now();
+		this.hooks.call("type_changed");
+		this.context.requestRedraw();
 	}
 
 	getDescription() {
@@ -1692,15 +1780,11 @@ class AddBrush extends Brush {
 	}
 
 	increment() {
-		this.nodeTypeIndex = this.nodeTypeIndex + 1;
-		this.wrapIndex();
-		this.lastTypeChange = performance.now();
+		this.setNodeTypeIndex(this.nodeTypeIndex - 1);
 	}
 
 	decrement() {
-		this.nodeTypeIndex = this.nodeTypeIndex - 1;
-		this.wrapIndex();
-		this.lastTypeChange = performance.now();
+		this.setNodeTypeIndex(this.nodeTypeIndex + 1);
 	}
 
 	wrapIndex() {
@@ -1718,7 +1802,7 @@ class AddBrush extends Brush {
 		if((this.typeRecentlyChanged() || this.context.isKeyDown("q")) && this.nodeTypes.length > 0) {
 			const radius = Math.min(4, Math.ceil(this.nodeTypes.length / 2));
 			for(let i = -radius; i <= radius; i++) {
-				const type = this.nodeTypes[mod(this.nodeTypeIndex + i, this.nodeTypes.length)];
+				const type = this.nodeTypes[mod(this.nodeTypeIndex - i, this.nodeTypes.length)];
 				const text = type.getDescription();
 				context.font = (i === 0) ? "bold 16px sans" : `${16 - Math.abs(i)}px sans`;
 				context.fillText(text, position.x - this.getRadius() - context.measureText(text).width - 4, position.y + 4 + (-i) * 14);
@@ -1882,6 +1966,11 @@ class DeleteBrush extends Brush {
 		return `Delete (radius ${this.sizeInMeters()}m)`;
 	}
 
+	displayButton(button) {
+		button.innerText = "(D)elete";
+		button.title = "Delete Objects";
+	}
+
 	async activate(where) {
 		return new DrawEvent(this.context, where);
 	}
@@ -1979,6 +2068,11 @@ class TranslateEvent extends DragEvent {
 class SelectBrush extends Brush {
 	constructor(context) {
 		super(context);
+	}
+
+	displayButton(button) {
+		button.innerText = "(S)elect";
+		button.title = "Select Objects";
 	}
 
 	getDescription() {
@@ -2274,8 +2368,179 @@ class MegaTile {
 
 MegaTile.SIZE = Tile.SIZE * 8;
 
+class Brushbar {
+	constructor(context) {
+		this.context = context;
+
+		this.targetWidth = 64;
+		this.hooks = new HookContainer();
+
+		this.element = document.createElement("div");
+		this.element.setAttribute("class", "mapper1024_brush_bar");
+		this.element.style.position = "absolute";
+		this.context.parent.appendChild(this.element);
+
+		const title = document.createElement("span");
+		title.innerText = "Brush";
+		this.element.appendChild(title);
+		this.element.appendChild(document.createElement("hr"));
+
+		const size = document.createElement("span");
+		this.element.appendChild(size);
+
+		const updateSize = (brush) => {
+			if(brush === this.context.brush) {
+				size.innerText = `Radius ${brush.sizeInMeters()}m`;
+			}
+		};
+
+		updateSize(this.context.brush);
+
+		this.element.appendChild(document.createElement("br"));
+
+		this.context.hooks.add("brush_size_change", updateSize);
+		this.context.hooks.add("changed_brush", updateSize);
+		this.context.hooks.add("changed_zoom", () => updateSize(this.context.brush));
+
+		const sizeUp = document.createElement("button");
+		sizeUp.setAttribute("class", "mapper1024_brush_size_button");
+		sizeUp.innerText = "+";
+		sizeUp.onclick = () => {
+			this.context.brush.enlarge();
+			this.context.requestRedraw();
+			this.context.focus();
+		};
+		this.element.appendChild(sizeUp);
+
+		const sizeDown = document.createElement("button");
+		sizeDown.setAttribute("class", "mapper1024_brush_size_button");
+		sizeDown.innerText = "-";
+		sizeDown.onclick = () => {
+			this.context.brush.shrink();
+			this.context.requestRedraw();
+			this.context.focus();
+		};
+		this.element.appendChild(sizeDown);
+
+		this.element.appendChild(document.createElement("hr"));
+
+		const brushButtonContainer = document.createElement("div");
+		brushButtonContainer.setAttribute("class", "mapper1024_brush_button_container");
+		this.element.appendChild(brushButtonContainer);
+
+		const brushButton = (brush) => {
+			const button = document.createElement("button");
+			button.setAttribute("class", "mapper1024_brush_button");
+			brush.displayButton(button);
+			button.onclick = () => {
+				this.context.changeBrush(brush);
+				this.context.focus();
+			};
+
+			this.context.hooks.add("changed_brush", (newBrush) => {
+				button.style["font-weight"] = brush === newBrush ? "bold" : "normal";
+			});
+
+			return button;
+		};
+
+		for(const brushName in this.context.brushes) {
+			const button = brushButton(this.context.brushes[brushName]);
+			brushButtonContainer.appendChild(button);
+		}
+
+		this.element.appendChild(document.createElement("hr"));
+
+		this.brushStrip = document.createElement("span");
+
+		this.recalculate();
+
+		this.context.hooks.add("size_change", this.recalculate.bind(this));
+		this.context.hooks.add("changed_brush", (brush) => {
+			this.brushStrip.remove();
+			this.brushStrip = document.createElement("div");
+			this.brushStrip.setAttribute("class", "mapper1024_brush_strip");
+			brush.displaySidebar(this, this.brushStrip);
+			this.element.appendChild(this.brushStrip);
+		});
+		this.context.hooks.add("disconnect", this.disconnect.bind(this));
+	}
+
+	async recalculate() {
+		const padding = 32;
+		const hPadding = 8;
+		const screenSize = this.context.screenSize();
+		const size = new Vector3(this.targetWidth, screenSize.y - padding * 2, 0);
+		this.element.style.width = `${size.x}px`;
+		this.element.style.height = `${size.y}px`;
+		this.element.style.backgroundColor = "#eeeeeebb";
+		this.size = size;
+
+		const actualXSize = size.x + (this.element.offsetWidth - this.element.clientWidth);
+
+		const where = new Vector3(screenSize.x - actualXSize - hPadding, padding, 0);
+		this.element.style.left = `${where.x}px`;
+		this.element.style.top = `${where.y}px`;
+
+		this.element.style.width = `${actualXSize}px`;
+
+		await this.hooks.call("size_change", size);
+	}
+
+	disconnect() {
+		this.element.remove();
+	}
+}
+
+function style() {
+	const styleElement = document.createElement("style");
+	styleElement.innerHTML = `
+.mapper1024_brush_bar {
+	overflow-y: auto;
+	overflow-x: hidden;
+}
+
+.mapper1024_brush_strip {
+	word-wrap: break-word;
+}
+
+.mapper1024_brush_button_container {
+	display: flex;
+	flex-wrap: wrap;
+}
+
+.mapper1024_brush_button {
+	padding: 0;
+	margin: 0;
+}
+
+.mapper1024_brush_size_button {
+	padding: 0;
+	margin: 0;
+	font: 32px bold sans;
+	width: 32px;
+	height: 32px;
+	text-align: center;
+	line-height: 0;
+}
+
+.mapper1024_add_brush_strip {
+	margin: 0;
+	padding: 0;
+}
+
+.mapper1024_add_brush_strip > li {
+	list-style-type: none;
+}
+
+.mapper1024_add_brush_strip > li > button {
+}
+	`;
+	return styleElement;
+}
+
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.1.7";
+let version = "0.1.8";
 
 /** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
@@ -2330,10 +2595,19 @@ class RenderContext {
 		this.zoom = 5;
 		this.requestedZoom = 5;
 
-		this.brush = new AddBrush(this);
+		this.brushes = {
+			add: new AddBrush(this),
+			select: new SelectBrush(this),
+			"delete": new DeleteBrush(this),
+		};
+
+		this.brush = this.brushes.add;
 
 		this.hoverSelection = new Selection(this, []);
 		this.selection = new Selection(this, []);
+
+		this.styleElement = style();
+		document.head.appendChild(this.styleElement);
 
 		// The UI is just a canvas.
 		// We will keep its size filling the parent element.
@@ -2350,6 +2624,8 @@ class RenderContext {
 		this.mapper.hooks.add("removeNodes", (nodeRefs) => this.recalculateTilesNodesRemove(nodeRefs));
 		this.mapper.hooks.add("translateNodes", (nodeRefs) => this.recalculateTilesNodesTranslate(nodeRefs));
 		this.mapper.hooks.add("update", this.requestUpdateSelection.bind(this));
+
+		this.brushbar = new Brushbar(this);
 
 		this.canvas.addEventListener("contextmenu", event => {
 			event.preventDefault();
@@ -2425,7 +2701,7 @@ class RenderContext {
 				else if(event.key === "c") {
 					asyncFrom(this.drawnNodes()).then((drawnNodes) => {
 						this.scrollOffset = Vector3.ZERO;
-						this.zoom = this.requestedZoom = 5;
+						this.forceZoom(5);
 						this.recalculateTilesNodesTranslate(drawnNodes);
 					});
 				}
@@ -2443,13 +2719,13 @@ class RenderContext {
 				this.setScrollOffset(this.scrollOffset.add(new Vector3(this.screenSize().x / 3, 0, 0)).round());
 			}
 			else if(event.key === "d") {
-				this.changeBrush(new DeleteBrush(this));
+				this.changeBrush(this.brushes["delete"]);
 			}
 			else if(event.key === "a") {
-				this.changeBrush(new AddBrush(this));
+				this.changeBrush(this.brushes.add);
 			}
 			else if(event.key === "s") {
-				this.changeBrush(new SelectBrush(this));
+				this.changeBrush(this.brushes.select);
 			}
 			else if(event.key === "`") {
 				this.debugMode = !this.debugMode;
@@ -2550,6 +2826,8 @@ class RenderContext {
 		setTimeout(this.recalculateLoop.bind(this), 10);
 		setTimeout(this.recalculateSelection.bind(this), 10);
 		setTimeout(this.applyZoom.bind(this), 10);
+
+		this.changeBrush(this.brushes.add);
 	}
 
 	isPanning() {
@@ -2570,6 +2848,8 @@ class RenderContext {
 
 	changeBrush(brush) {
 		this.brush = brush;
+		this.brush.switchTo();
+		this.hooks.call("changed_brush", brush);
 		this.requestRedraw();
 	}
 
@@ -2610,6 +2890,7 @@ class RenderContext {
 			asyncFrom(this.drawnNodes()).then((drawnNodes) => {
 				const oldLandmark = this.canvasPointToMap(this.mousePosition);
 				this.zoom = this.requestedZoom;
+				this.hooks.call("changed_zoom", this.zoom);
 				const newLandmark = this.canvasPointToMap(this.mousePosition);
 				this.scrollOffset = this.scrollOffset.add(this.mapPointToCanvas(oldLandmark).subtract(this.mapPointToCanvas(newLandmark)));
 				this.recalculateTilesNodesTranslate(drawnNodes);
@@ -2619,6 +2900,12 @@ class RenderContext {
 		if(this.alive) {
 			setTimeout(this.applyZoom.bind(this), 10);
 		}
+	}
+
+	forceZoom(zoom) {
+		this.zoom = this.requestedZoom = zoom;
+		this.hooks.call("changed_zoom", this.zoom);
+		this.recalculateTilesViewport();
 	}
 
 	async redrawLoop() {
@@ -2791,6 +3078,8 @@ class RenderContext {
 		// Keep the canvas matching the parent size.
 		this.canvas.width = this.parent.clientWidth;
 		this.canvas.height = this.parent.clientHeight;
+
+		this.hooks.call("size_change");
 
 		this.recalculateTilesViewport();
 	}
@@ -3098,7 +3387,7 @@ class RenderContext {
 				if(size > 0) {
 					c.font = selected ? `bold ${size}px serif` : `${size}px serif`;
 					const measure = c.measureText(name);
-					const height = measure.actualBoundingBoxAscent + measure.actualBoundingBoxDescent;
+					const height = Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent);
 					const where = position.where.subtract(new Vector3(measure.width / 2, height / 2, 0, 0));
 					c.globalAlpha = 0.25;
 					c.fillStyle = "black";
@@ -3121,14 +3410,14 @@ class RenderContext {
 			const measure = c.measureText(l);
 			c.globalAlpha = 0.25;
 			c.fillStyle = "black";
-			c.fillRect(18, infoLineY - 2, measure.width, measure.actualBoundingBoxAscent + measure.actualBoundingBoxDescent + 4);
+			c.fillRect(18, infoLineY - 2, measure.width, Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent) + 4);
 			c.globalAlpha = 1;
 			c.fillStyle = "white";
 			c.fillText(l, 18, infoLineY);
 			infoLineY += 24;
 		}
 
-		infoLine(`Brush: ${this.brush.getDescription()} | Change brush mode with (A)dd, (S)elect or (D)elete. `);
+		infoLine("Change brush mode with (A)dd, (S)elect or (D)elete. ");
 
 		// Debug help
 		infoLine("You can (N)ame the selected object. Scroll to zoom.");
@@ -3146,7 +3435,7 @@ class RenderContext {
 		}
 		infoLine("Right click or arrow keys to move map. Ctrl+C to return to center. Ctrl+Z is undo, Ctrl+Y is redo. ` to toggle debug mode.");
 
-		this.hooks.call("draw_help", {
+		await this.hooks.call("draw_help", {
 			infoLine: infoLine,
 		});
 
@@ -3201,7 +3490,7 @@ class RenderContext {
 		const measure = c.measureText(text);
 
 		const x = this.screenBox().b.x - measure.width;
-		const height = measure.actualBoundingBoxAscent + measure.actualBoundingBoxDescent;
+		const height = Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent);
 
 		c.globalAlpha = 0.25;
 		c.fillStyle = "black";
@@ -3272,8 +3561,11 @@ class RenderContext {
 	/** Disconnect the render context from the page and clean up listeners. */
 	disconnect() {
 		this.alive = false;
-		this.parentObserver.disconnect();
-		this.parent.removeChild(this.canvas);
+		this.hooks.call("disconnect").then(() => {
+			this.styleElement.remove();
+			this.parentObserver.disconnect();
+			this.canvas.remove();
+		});
 	}
 }
 
