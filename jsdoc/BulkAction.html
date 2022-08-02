@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Source: hook_container.js</title>
+    <title>JSDoc: Class: BulkAction</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,63 +17,139 @@
 
 <div id="main">
 
-    <h1 class="page-title">Source: hook_container.js</h1>
+    <h1 class="page-title">Class: BulkAction</h1>
 
     
 
 
 
+
+<section>
+
+<header>
     
-    <section>
-        <article>
-            <pre class="prettyprint source linenums"><code>/** A simple hook system.
- * Allows registering functions to be called on arbitrary events/hooks,
- * and allows calling all functions registered for each event/hook.
- */
-class HookContainer {
-	constructor() {
-		this.hooks = {};
-	}
+        <h2><span class="attribs"><span class="type-signature"></span></span>BulkAction<span class="signature">()</span><span class="type-signature"></span></h2>
+        
+            <div class="class-description">An action composed of several actions. Will handle creating the needed bulk action to undo the actions in order.
+Options:
+- actions: An array of actions to perform.</div>
+        
+    
+</header>
 
-	/** Register a function to be called upon a specific hook.
-	 * @param hookName {string} The name of the hook this method will be called on.
-	 * @param hookFunction {function} A function that will be called when the specified hook is called.
-	 */
-	add(hookName, hookFunction) {
-		if(!(hookName in this.hooks)) {
-			this.hooks[hookName] = [];
-		}
+<article>
+    <div class="container-overview">
+    
+        
 
-		this.hooks[hookName].push(hookFunction);
-	}
+    
+    <h2>Constructor</h2>
+    
 
-	/** Remove a function from being called upon a specific hook.
-	 * @param hookName {string} The name of the hook to remove from.
-	 * @param hookFunction {function} The function to remove from the hook.
-	 */
-	remove(hookName, hookFunction) {
-		if(hookName in this.hooks) {
-			this.hooks[hookName] = this.hooks[hookName].filter(f => f !== hookFunction);
-		}
-	}
+    
+    <h4 class="name" id="BulkAction"><span class="type-signature"></span>new BulkAction<span class="signature">()</span><span class="type-signature"></span></h4>
+    
 
-	/** Call all functions registered for a specific hook.
-	 * @param hookName {string} The hook to call.
-	 * @param ...args Remaining arguments are passed to the hook functions.
-	 */
-	async call(hookName, ...args) {
-		if(hookName in this.hooks) {
-			for(const hookFunction of this.hooks[hookName]) {
-				await hookFunction(...args);
-			}
-		}
-	}
-}
+    
 
-export { HookContainer };
-</code></pre>
-        </article>
-    </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="actions_bulk_action.js.html">actions/bulk_action.js</a>, <a href="actions_bulk_action.js.html#line7">line 7</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
 
 
 

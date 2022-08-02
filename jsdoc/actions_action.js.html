@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Source: hook_container.js</title>
+    <title>JSDoc: Source: actions/action.js</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Source: hook_container.js</h1>
+    <h1 class="page-title">Source: actions/action.js</h1>
 
     
 
@@ -26,51 +26,34 @@
     
     <section>
         <article>
-            <pre class="prettyprint source linenums"><code>/** A simple hook system.
- * Allows registering functions to be called on arbitrary events/hooks,
- * and allows calling all functions registered for each event/hook.
+            <pre class="prettyprint source linenums"><code>/** An Action performed on the map (such as adding a node or changing a node's property).
+ * Every action has an opposite action that can be used to create an undo/redo system.
  */
-class HookContainer {
-	constructor() {
-		this.hooks = {};
-	}
-
-	/** Register a function to be called upon a specific hook.
-	 * @param hookName {string} The name of the hook this method will be called on.
-	 * @param hookFunction {function} A function that will be called when the specified hook is called.
+class Action {
+	/**
+	 * @param context {RenderContext} the context in which this action is performed
+	 * @param options A key-value object of various options for the action.
 	 */
-	add(hookName, hookFunction) {
-		if(!(hookName in this.hooks)) {
-			this.hooks[hookName] = [];
-		}
-
-		this.hooks[hookName].push(hookFunction);
+	constructor(context, options) {
+		this.context = context;
+		this.options = options;
 	}
 
-	/** Remove a function from being called upon a specific hook.
-	 * @param hookName {string} The name of the hook to remove from.
-	 * @param hookFunction {function} The function to remove from the hook.
+	/**
+	 * Is the action a no-op, based on its options?
+	 * @returns {boolean}
 	 */
-	remove(hookName, hookFunction) {
-		if(hookName in this.hooks) {
-			this.hooks[hookName] = this.hooks[hookName].filter(f => f !== hookFunction);
-		}
+	empty() {
+		return false;
 	}
 
-	/** Call all functions registered for a specific hook.
-	 * @param hookName {string} The hook to call.
-	 * @param ...args Remaining arguments are passed to the hook functions.
+	/** Perform the action.
+	 * @return {Action} An action that completely undoes the performed action.
 	 */
-	async call(hookName, ...args) {
-		if(hookName in this.hooks) {
-			for(const hookFunction of this.hooks[hookName]) {
-				await hookFunction(...args);
-			}
-		}
-	}
+	async perform() {}
 }
 
-export { HookContainer };
+export { Action };
 </code></pre>
         </article>
     </section>

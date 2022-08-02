@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Class: EdgeRef</title>
+    <title>JSDoc: Class: Action</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,7 +17,7 @@
 
 <div id="main">
 
-    <h1 class="page-title">Class: EdgeRef</h1>
+    <h1 class="page-title">Class: Action</h1>
 
     
 
@@ -28,10 +28,10 @@
 
 <header>
     
-        <h2><span class="attribs"><span class="type-signature"></span></span>EdgeRef<span class="signature">()</span><span class="type-signature"></span></h2>
+        <h2><span class="attribs"><span class="type-signature"></span></span>Action<span class="signature">(context, options)</span><span class="type-signature"></span></h2>
         
-            <div class="class-description">Reference to an edge entity.
-Do not construct manually, use backend methods.</div>
+            <div class="class-description">An Action performed on the map (such as adding a node or changing a node's property).
+Every action has an opposite action that can be used to create an undo/redo system.</div>
         
     
 </header>
@@ -46,7 +46,7 @@ Do not construct manually, use backend methods.</div>
     
 
     
-    <h4 class="name" id="EdgeRef"><span class="type-signature"></span>new EdgeRef<span class="signature">()</span><span class="type-signature"></span></h4>
+    <h4 class="name" id="Action"><span class="type-signature"></span>new Action<span class="signature">(context, options)</span><span class="type-signature"></span></h4>
     
 
     
@@ -59,6 +59,73 @@ Do not construct manually, use backend methods.</div>
 
 
 
+
+
+    <h5>Parameters:</h5>
+    
+
+<table class="params">
+    <thead>
+    <tr>
+        
+        <th>Name</th>
+        
+
+        <th>Type</th>
+
+        
+
+        
+
+        <th class="last">Description</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    
+
+        <tr>
+            
+                <td class="name"><code>context</code></td>
+            
+
+            <td class="type">
+            
+                
+<span class="param-type"><a href="RenderContext.html">RenderContext</a></span>
+
+
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">the context in which this action is performed</td>
+        </tr>
+
+    
+
+        <tr>
+            
+                <td class="name"><code>options</code></td>
+            
+
+            <td class="type">
+            
+            </td>
+
+            
+
+            
+
+            <td class="description last">A key-value object of various options for the action.</td>
+        </tr>
+
+    
+    </tbody>
+</table>
 
 
 
@@ -94,7 +161,7 @@ Do not construct manually, use backend methods.</div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend_entity.js.html">backend/entity.js</a>, <a href="backend_entity.js.html#line196">line 196</a>
+        <a href="actions_action.js.html">actions/action.js</a>, <a href="actions_action.js.html#line4">line 4</a>
     </li></ul></dd>
     
 
@@ -150,7 +217,7 @@ Do not construct manually, use backend methods.</div>
     
 
     
-    <h4 class="name" id="getLine"><span class="type-signature">(async) </span>getLine<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Line3.html">Line3</a>}</span></h4>
+    <h4 class="name" id="empty"><span class="type-signature"></span>empty<span class="signature">()</span><span class="type-signature"> &rarr; {boolean}</span></h4>
     
 
     
@@ -158,7 +225,7 @@ Do not construct manually, use backend methods.</div>
 
 
 <div class="description">
-    Get the spatial line between the centers of each node on this edge.
+    Is the action a no-op, based on its options?
 </div>
 
 
@@ -202,7 +269,7 @@ Do not construct manually, use backend methods.</div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend_entity.js.html">backend/entity.js</a>, <a href="backend_entity.js.html#line215">line 215</a>
+        <a href="actions_action.js.html">actions/action.js</a>, <a href="actions_action.js.html#line18">line 18</a>
     </li></ul></dd>
     
 
@@ -238,7 +305,7 @@ Do not construct manually, use backend methods.</div>
     </dt>
     <dd>
         
-<span class="param-type"><a href="Line3.html">Line3</a></span>
+<span class="param-type">boolean</span>
 
 
     </dd>
@@ -256,7 +323,7 @@ Do not construct manually, use backend methods.</div>
     
 
     
-    <h4 class="name" id="getNodes"><span class="type-signature">(async, generator) </span>getNodes<span class="signature">()</span><span class="type-signature"> &rarr; {AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>>}</span></h4>
+    <h4 class="name" id="perform"><span class="type-signature">(async) </span>perform<span class="signature">()</span><span class="type-signature"> &rarr; {<a href="Action.html">Action</a>}</span></h4>
     
 
     
@@ -264,7 +331,7 @@ Do not construct manually, use backend methods.</div>
 
 
 <div class="description">
-    Get the (two) nodes connected to this edge.
+    Perform the action.
 </div>
 
 
@@ -308,162 +375,7 @@ Do not construct manually, use backend methods.</div>
     
     <dt class="tag-source">Source:</dt>
     <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend_entity.js.html">backend/entity.js</a>, <a href="backend_entity.js.html#line200">line 200</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<h5>Returns:</h5>
-
-        
-
-
-<dl>
-    <dt>
-        Type
-    </dt>
-    <dd>
-        
-<span class="param-type">AsyncIterable.&lt;<a href="NodeRef.html">NodeRef</a>></span>
-
-
-    </dd>
-</dl>
-
-    
-
-
-
-
-
-        
-            
-
-    
-
-    
-    <h4 class="name" id="getOtherNode"><span class="type-signature">(async) </span>getOtherNode<span class="signature">(startId)</span><span class="type-signature"> &rarr; {<a href="NodeRef.html">NodeRef</a>}</span></h4>
-    
-
-    
-
-
-
-<div class="description">
-    Get the other node connected to this edge, given one of the connected nodes.
-</div>
-
-
-
-
-
-
-
-
-
-    <h5>Parameters:</h5>
-    
-
-<table class="params">
-    <thead>
-    <tr>
-        
-        <th>Name</th>
-        
-
-        <th>Type</th>
-
-        
-
-        
-
-        <th class="last">Description</th>
-    </tr>
-    </thead>
-
-    <tbody>
-    
-
-        <tr>
-            
-                <td class="name"><code>startId</code></td>
-            
-
-            <td class="type">
-            
-                
-<span class="param-type">number</span>
-
-
-            
-            </td>
-
-            
-
-            
-
-            <td class="description last">the known node ID.</td>
-        </tr>
-
-    
-    </tbody>
-</table>
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="backend_entity.js.html">backend/entity.js</a>, <a href="backend_entity.js.html#line208">line 208</a>
+        <a href="actions_action.js.html">actions/action.js</a>, <a href="actions_action.js.html#line25">line 25</a>
     </li></ul></dd>
     
 
@@ -492,7 +404,7 @@ Do not construct manually, use backend methods.</div>
 
         
 <div class="param-desc">
-    the other node connected to this edge.
+    An action that completely undoes the performed action.
 </div>
 
 
@@ -503,7 +415,7 @@ Do not construct manually, use backend methods.</div>
     </dt>
     <dd>
         
-<span class="param-type"><a href="NodeRef.html">NodeRef</a></span>
+<span class="param-type"><a href="Action.html">Action</a></span>
 
 
     </dd>
