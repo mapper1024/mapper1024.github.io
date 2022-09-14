@@ -1,7 +1,7 @@
 #!/bin/bash
 set -ex
 
-DEFAULT=sample_map_0.1.8
+DEFAULT=sample_map_0.2.1
 
 if ! [ -f update.sh ] || ! [ -f ../index.html ]; then
 	echo "Must run $0 in the screenshots directory."
