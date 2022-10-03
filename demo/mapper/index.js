@@ -643,6 +643,15 @@ class NodeRef extends EntityRef {
 		return this.getPNumber("radius");
 	}
 
+	async getLayer() {
+		const layerId = await this.getPString("layer");
+		return layerId ? this.backend.layerRegistry.get(layerId) : this.backend.layerRegistry.getDefault();
+	}
+
+	async setLayer(layer) {
+		return this.setPString("layer", layer.id);
+	}
+
 	/** Get all edges connected to this node.
 	 * @returns {AsyncIterable.<DirEdgeRef>} all the edges, with direction information from this node.
 	 */
@@ -812,26 +821,42 @@ class NodeTypeRegistry {
 
 		this.registerType(new NodeType("water", {
 			color: "darkblue",
+			layer: "geographical",
 		}));
 
 		this.registerType(new NodeType("grass", {
 			color: "lightgreen",
+			layer: "geographical",
 		}));
 
 		this.registerType(new NodeType("forest", {
 			color: "darkgreen",
+			layer: "geographical",
 		}));
 
 		this.registerType(new NodeType("rocks", {
 			color: "gray",
+			layer: "geographical",
 		}));
 
 		this.registerType(new NodeType("road", {
 			color: "brown",
+			layer: "geographical",
 		}));
 
 		this.registerType(new NodeType("buildings", {
 			color: "yellow",
+			layer: "geographical",
+		}));
+
+		this.registerType(new NodeType("region", {
+			color: "orange",
+			layer: "political",
+		}));
+
+		this.registerType(new NodeType("note", {
+			color: "white",
+			layer: "annotation",
 		}));
 	}
 
@@ -847,6 +872,57 @@ class NodeTypeRegistry {
 
 	get(typeId) {
 		return this.types[typeId];
+	}
+}
+
+class Layer {
+	constructor(id, def) {
+		this.id = id;
+		this.def = def;
+	}
+
+	getDescription() {
+		return this.id;
+	}
+
+	getType() {
+		return this.def.type;
+	}
+}
+
+class LayerRegistry {
+	constructor() {
+		this.layers = {};
+
+		this.registerLayer(new Layer("geographical", {
+			type: "geographical",
+		}));
+
+		this.registerLayer(new Layer("political", {
+			type: "political"
+		}));
+
+		this.registerLayer(new Layer("annotation", {
+			type: "annotation",
+		}));
+	}
+
+	registerLayer(layer) {
+		this.layers[layer.id] = layer;
+	}
+
+	* getLayers() {
+		for(const k in this.layers) {
+			yield this.layers[k];
+		}
+	}
+
+	get(id) {
+		return this.layers[id];
+	}
+
+	getDefault() {
+		return this.get("geographical");
 	}
 }
 
@@ -866,6 +942,7 @@ class MapBackend {
 		this.loaded = false;
 		this.hooks = new HookContainer();
 		this.nodeTypeRegistry = new NodeTypeRegistry();
+		this.layerRegistry = new LayerRegistry();
 		this.entityCache = {};
 	}
 
@@ -1907,7 +1984,7 @@ class DrawPathAction extends Action {
 		const radius = this.getRadiusOnMap();
 
 		const getAltitudeAdd = async (point) => {
-			const closestNodeRef = await this.context.getDrawnNodeAtCanvasPoint(this.context.mapPointToCanvas(point));
+			const closestNodeRef = await this.context.getDrawnNodeAtCanvasPoint(this.context.mapPointToCanvas(point), this.options.layer);
 			if(closestNodeRef && (!(await closestNodeRef.getParent()) || (await closestNodeRef.getParent()).id !== this.options.parent.id)) {
 				return (await closestNodeRef.getCenter()).z + this.context.altitudeIncrement;
 			}
@@ -2065,12 +2142,19 @@ class AddBrush extends Brush {
 		super(context);
 
 		this.nodeTypeIndex = 0;
-		this.nodeTypes = Array.from(this.context.mapper.backend.nodeTypeRegistry.getTypes());
 		this.lastTypeChange = 0;
 
 		this.hooks = new HookContainer();
 
+		this.nodeTypes = this.originalNodeTypes = Array.from(this.context.mapper.backend.nodeTypeRegistry.getTypes());
 		this.setNodeTypeIndex(0);
+
+		const reset = (layer) => {
+			this.nodeTypes = this.originalNodeTypes.filter((nodeType) => nodeType.def.layer === layer.getType());
+			this.setNodeTypeIndex(0);
+		};
+
+		this.hooks.add("current_layer_change", (layer) => reset(layer));
 	}
 
 	displayButton(button) {
@@ -2079,62 +2163,75 @@ class AddBrush extends Brush {
 	}
 
 	displaySidebar(brushbar, container) {
-		const list = document.createElement("ul");
-		list.setAttribute("class", "mapper1024_add_brush_strip");
-		container.appendChild(list);
+		const make = (layer) => {
+			container.innerHTML = "";
 
-		for(const nodeType of this.nodeTypes) {
-			const index = this.nodeTypes.indexOf(nodeType);
+			const list = document.createElement("ul");
+			list.setAttribute("class", "mapper1024_add_brush_strip");
+			container.appendChild(list);
 
-			const li = document.createElement("li");
-			list.appendChild(li);
+			for(const nodeType of this.nodeTypes) {
+				if(nodeType.def.layer === layer.getType()) {
+					const index = this.nodeTypes.indexOf(nodeType);
 
-			const button = document.createElement("canvas");
-			li.appendChild(button);
+					const li = document.createElement("li");
+					list.appendChild(li);
 
-			button.width = brushbar.size.x - 8;
-			button.height = brushbar.size.x - 8;
+					const button = document.createElement("canvas");
+					li.appendChild(button);
 
-			button.title = nodeType.id;
+					button.width = brushbar.size.x - 8;
+					button.height = brushbar.size.x - 8;
 
-			const c = button.getContext("2d");
-			c.fillStyle = nodeType.def.color;
-			c.fillRect(0, 0, button.width, button.height);
+					button.title = nodeType.id;
 
-			c.textBaseline = "top";
-			c.font = "12px sans";
+					const c = button.getContext("2d");
+					c.fillStyle = nodeType.def.color;
+					c.fillRect(0, 0, button.width, button.height);
 
-			const text = nodeType.id;
-			const firstMeasure = c.measureText(text);
+					c.textBaseline = "top";
+					c.font = "12px sans";
 
-			c.font = `${button.width / firstMeasure.width * 12}px sans`;
-			const measure = c.measureText(text);
-			const height = Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent);
-			c.globalAlpha = 0.25;
-			c.fillStyle = "black";
-			c.fillRect(0, 0, measure.width, height);
-			c.globalAlpha = 1;
-			c.fillStyle = "white";
-			c.fillText(text, 0, 0);
+					const text = nodeType.id;
+					const firstMeasure = c.measureText(text);
 
-			button.onclick = () => {
-				this.setNodeTypeIndex(index);
-				this.context.focus();
-			};
+					c.font = `${button.width / firstMeasure.width * 12}px sans`;
+					const measure = c.measureText(text);
+					const height = Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent);
+					c.globalAlpha = 0.25;
+					c.fillStyle = "black";
+					c.fillRect(0, 0, measure.width, height);
+					c.globalAlpha = 1;
+					c.fillStyle = "white";
+					c.fillText(text, 0, 0);
 
-			const update = () => {
-				if(this.nodeTypeIndex === index) {
-					button.style.border = "3px dotted black";
+					button.onclick = () => {
+						this.setNodeTypeIndex(index);
+						this.context.focus();
+					};
+
+					const update = () => {
+						if(this.nodeTypeIndex === index) {
+							button.style.border = "3px dotted black";
+						}
+						else {
+							button.style.border = "0";
+						}
+					};
+
+					update();
+
+					this.hooks.add("type_changed", update);
 				}
-				else {
-					button.style.border = "0";
-				}
-			};
+			}
+		};
 
-			update();
+		make(this.context.getCurrentLayer());
+		this.hooks.add("current_layer_change", (layer) => make(layer));
+	}
 
-			this.hooks.add("type_changed", update);
-		}
+	signalLayerChange(layer) {
+		this.hooks.call("current_layer_change", layer);
 	}
 
 	setNodeTypeIndex(index) {
@@ -2192,6 +2289,7 @@ class AddBrush extends Brush {
 			drawEvent: drawEvent,
 			parent: this.parentNode,
 			undoParent: this.undoParent,
+			layer: this.context.getCurrentLayer(),
 		};
 
 		return await this.context.performAction(new DrawPathAction(this.context, drawPathActionOptions));
@@ -2279,6 +2377,10 @@ class Selection {
 		this.directSelectedNodeIds = directSelectedNodeIds;
 	}
 
+	hasNodeId(nodeId) {
+		return this.selectedNodeIds.has(nodeId);
+	}
+
 	hasNodeRef(nodeRef) {
 		return this.selectedNodeIds.has(nodeRef.id);
 	}
@@ -2351,8 +2453,10 @@ class DeleteBrush extends Brush {
 
 	async * getNodesInBrush(brushPosition) {
 		for await (const nodeRef of this.context.drawnNodes()) {
-			if(this.context.mapPointToCanvas((await nodeRef.getEffectiveCenter())).subtract(brushPosition).length() <= this.getRadius() && !(await nodeRef.hasChildren())) {
-				yield nodeRef;
+			if((await nodeRef.getLayer()).id === this.context.getCurrentLayer().id) {
+				if(this.context.mapPointToCanvas((await nodeRef.getEffectiveCenter())).subtract(brushPosition).length() <= this.getRadius() && !(await nodeRef.hasChildren())) {
+					yield nodeRef;
+				}
 			}
 		}
 	}
@@ -2501,11 +2605,34 @@ for(const dirName of dirKeys) {
 	normalizedDirs[dirName] = dirs[dirName].normalize();
 }
 
+const colors = [
+	"blue",
+	"darkblue",
+	"lightblue",
+	"red",
+	"maroon",
+	"crimson",
+	"orange",
+	"darkorange",
+	"purple",
+	"violet",
+	"indigo",
+	"yellow",
+	"goldenrod",
+	"pink",
+	"hotpink",
+	"brown",
+	"moccasin",
+];
+
 class Tile {
 	constructor(megaTile, corner) {
 		this.context = megaTile.context;
 		this.megaTile = megaTile;
 		this.nearbyNodes = new Map();
+		this.nearbyPoliticalNodeIds = new Set();
+		this.nearbyAnnotationNodeIds = new Set();
+		this.nearbyBorderMasterNodeIds = new Set();
 		this.corner = corner;
 
 		this.closestNodeRef = null;
@@ -2513,6 +2640,12 @@ class Tile {
 		this.closestNodeDistance = Infinity;
 		this.closestNodeRadiusInUnits = Infinity;
 		this.closestNodeAltitude = -Infinity;
+
+		this.closestPoliticalNodeRef = null;
+		this.closestPoliticalNodeDistance = Infinity;
+
+		this.closestAnnotationNodeRef = null;
+		this.closestAnnotationNodeDistance = Infinity;
 	}
 
 	getCenter() {
@@ -2532,20 +2665,51 @@ class Tile {
 	}
 
 	async addNode(nodeRef) {
+		const nodeLayer = await nodeRef.getLayer();
+		const nodeLayerType = nodeLayer.getType();
 		const nodeCenterInUnits = await nodeRef.getEffectiveCenter();
 		const nodeCenterInPixels = nodeCenterInUnits.map((a) => this.context.unitsToPixels(a));
 		const distance = nodeCenterInPixels.subtract(this.getCenter()).length();
 		const nodeRadiusInUnits = await nodeRef.getRadius();
 		const nodeRadiusInPixels = this.context.unitsToPixels(nodeRadiusInUnits);
-		if(distance <= nodeRadiusInPixels + Tile.SIZE / 2 && nodeRadiusInPixels >= Tile.SIZE / 8) {
-			this.nearbyNodes.set(nodeRef.id, nodeRef);
+		const fits = distance <= nodeRadiusInPixels + Tile.SIZE / 2 && nodeRadiusInPixels >= Tile.SIZE / 8;
+		if(fits) {
 			this.megaTile.addNode(nodeRef.id);
 
-			if(distance < this.closestNodeDistance && (nodeCenterInUnits.z > this.closestNodeAltitude || (nodeCenterInUnits.z === this.closestNodeAltitude && nodeRadiusInUnits <= this.closestNodeRadiusInUnits))) {
-				this.closestNodeRef = nodeRef;
-				this.closestNodeRadiusInUnits = nodeRadiusInUnits;
-				this.closestNodeAltitude = nodeCenterInUnits.z;
-				this.closestNodeType = await nodeRef.getType();
+			if(nodeLayerType === "geographical") {
+				this.nearbyNodes.set(nodeRef.id, nodeRef);
+
+				if(distance < this.closestNodeDistance && (nodeCenterInUnits.z > this.closestNodeAltitude || (nodeCenterInUnits.z === this.closestNodeAltitude && nodeRadiusInUnits <= this.closestNodeRadiusInUnits))) {
+					this.closestNodeRef = nodeRef;
+					this.closestNodeRadiusInUnits = nodeRadiusInUnits;
+					this.closestNodeAltitude = nodeCenterInUnits.z;
+					this.closestNodeType = await nodeRef.getType();
+				}
+
+			}
+			else if(nodeLayerType === "political") {
+				if(distance < this.closestPoliticalNodeDistance) {
+					this.closestPoliticalNodeRef = nodeRef;
+					this.closestPoliticalNodeDistance = distance;
+				}
+
+				this.nearbyPoliticalNodeIds.add(nodeRef.id);
+				const parent = await nodeRef.getParent();
+				if(parent) {
+					this.nearbyBorderMasterNodeIds.add(parent.id);
+				}
+			}
+			else if(nodeLayerType === "annotation") {
+				if(distance < this.closestAnnotationNodeDistance) {
+					this.closestAnnotationNodeRef = nodeRef;
+					this.closestAnnotationNodeDistance = distance;
+				}
+
+				this.nearbyAnnotationNodeIds.add(nodeRef.id);
+				const parent = await nodeRef.getParent();
+				if(parent) {
+					this.nearbyBorderMasterNodeIds.add(parent.id);
+				}
 			}
 
 			return true;
@@ -2574,40 +2738,79 @@ class Tile {
 	}
 
 	async render() {
-		const position = this.getMegaTilePosition();
+		if(this.closestNodeType) {
+			const position = this.getMegaTilePosition();
 
-		const key = [this.closestNodeType.id, Math.floor(Math.random() * 4)];
+			const key = [this.closestNodeType.id, Math.floor(Math.random() * 4)];
 
-		for(const [dirName, dir, otherTile] of this.getNeighborTiles()) {
-			const otherType = (otherTile && otherTile.closestNodeType) ? otherTile.closestNodeType.id : "null";
-			key.push(otherType);
-		}
-
-		const keyString = key.join(" ");
-		const tileRenders = this.context.tileRenders;
-		let canvas = tileRenders[keyString];
-
-		if(canvas === undefined) {
-			canvas = document.createElement("canvas");
-			canvas.width = Tile.SIZE;
-			canvas.height = Tile.SIZE;
-
-			const neighbors = {};
 			for(const [dirName, dir, otherTile] of this.getNeighborTiles()) {
-				neighbors[dirName] = {
-					dir: dir,
-					type: (otherTile && otherTile.closestNodeType) ? otherTile.closestNodeType : null,
-				};
+				const otherType = (otherTile && otherTile.closestNodeType) ? otherTile.closestNodeType.id : "null";
+				key.push(otherType);
 			}
 
-			await Tile.renderMaster(canvas, this.closestNodeType, neighbors);
-			tileRenders[keyString] = canvas;
+			const keyString = key.join(" ");
+			const tileRenders = this.context.tileRenders;
+			let canvas = tileRenders[keyString];
+
+			if(canvas === undefined) {
+				canvas = document.createElement("canvas");
+				canvas.width = Tile.SIZE;
+				canvas.height = Tile.SIZE;
+
+				const neighbors = {};
+				for(const [dirName, dir, otherTile] of this.getNeighborTiles()) {
+					neighbors[dirName] = {
+						dir: dir,
+						type: (otherTile && otherTile.closestNodeType) ? otherTile.closestNodeType : null,
+					};
+				}
+
+				await Tile.renderMasterGeographical(canvas, this.closestNodeType, neighbors);
+				tileRenders[keyString] = canvas;
+			}
+
+			this.megaTile.canvasContext.drawImage(canvas, position.x, position.y);
 		}
 
-		this.megaTile.canvasContext.drawImage(canvas, position.x, position.y);
+		if(this.nearbyBorderMasterNodeIds.size > 0) {
+			let totalTiles = 0;
+			const found = new Map();
+			for(const [dirName, dir, otherTile] of this.getNeighborTiles()) {
+				totalTiles++;
+				if(otherTile) {
+					for(const nodeId of otherTile.nearbyBorderMasterNodeIds) {
+						found.set(nodeId, found.has(nodeId) ? found.get(nodeId) + 1 : 1);
+					}
+				}
+			}
+
+			const position = this.getMegaTilePosition();
+			const c = this.megaTile.canvasContext;
+
+			const actualNodeIds = [];
+			for(const nodeId of this.nearbyBorderMasterNodeIds) {
+				if(!found.has(nodeId) || found.get(nodeId) < totalTiles) {
+					actualNodeIds.push(nodeId);
+				}
+			}
+
+			const radiansPerNode = Math.PI * 2 / actualNodeIds.length;
+
+			let i = 0;
+			for(const nodeId of actualNodeIds) {
+				const colorI = nodeId % colors.length;
+				c.fillStyle = colors[colorI];
+
+				c.beginPath();
+				c.arc(position.x + Tile.SIZE / 2, position.y + Tile.SIZE / 2, Tile.SIZE / 8, radiansPerNode * i, radiansPerNode * (i + 1), false);
+				c.fill();
+
+				i++;
+			}
+		}
 	}
 
-	static async renderMaster(canvas, type, neighbors) {
+	static async renderMasterGeographical(canvas, type, neighbors) {
 		const c = canvas.getContext("2d");
 
 		const colors = {
@@ -2802,6 +3005,33 @@ class Brushbar {
 
 		this.element.appendChild(document.createElement("hr"));
 
+		const layerButtonContainer = document.createElement("div");
+		layerButtonContainer.setAttribute("class", "mapper1024_brush_button_container");
+		this.element.appendChild(layerButtonContainer);
+
+		const layerButton = (layer) => {
+			const button = document.createElement("button");
+			button.setAttribute("class", "mapper1024_brush_button");
+			button.innerText = layer.getDescription();
+			button.onclick = () => {
+				this.context.setCurrentLayer(layer);
+				this.context.focus();
+			};
+
+			this.context.hooks.add("current_layer_change", (newLayer) => {
+				button.style["font-weight"] = layer.id === newLayer.id ? "bold" : "normal";
+			});
+
+			return button;
+		};
+
+		for(const layer of this.context.mapper.backend.layerRegistry.getLayers()) {
+			const button = layerButton(layer);
+			layerButtonContainer.appendChild(button);
+		}
+
+		this.element.appendChild(document.createElement("hr"));
+
 		this.brushStrip = document.createElement("span");
 
 		this.recalculate();
@@ -2863,6 +3093,9 @@ function style() {
 .mapper1024_brush_button {
 	padding: 0;
 	margin: 0;
+	text-overflow: ellipsis;
+	overflow: hidden;
+	white-space: nowrap;
 }
 
 .mapper1024_brush_size_button {
@@ -2891,7 +3124,7 @@ function style() {
 }
 
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.2.2";
+let version = "0.2.3";
 
 /** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
@@ -2955,6 +3188,8 @@ class RenderContext {
 		};
 
 		this.brush = this.brushes.add;
+
+		this.currentLayer = this.mapper.backend.layerRegistry.getDefault();
 
 		this.hoverSelection = new Selection(this, []);
 		this.selection = new Selection(this, []);
@@ -3080,6 +3315,11 @@ class RenderContext {
 			else if(event.key === "s") {
 				this.changeBrush(this.brushes.select);
 			}
+			else if(event.key === "l") {
+				const layerArray = Array.from(this.mapper.backend.layerRegistry.getLayers());
+				const layerIdArray = layerArray.map(layer => layer.id);
+				this.setCurrentLayer(layerArray[(layerIdArray.indexOf(this.getCurrentLayer().id) + 1) % layerArray.length]);
+			}
 			else if(event.key === "`") {
 				this.debugMode = !this.debugMode;
 			}
@@ -3181,6 +3421,17 @@ class RenderContext {
 		setTimeout(this.applyZoom.bind(this), 10);
 
 		this.changeBrush(this.brushes.add);
+		this.setCurrentLayer(this.getCurrentLayer());
+	}
+
+	getCurrentLayer() {
+		return this.currentLayer;
+	}
+
+	setCurrentLayer(layer) {
+		this.currentLayer = layer;
+		this.brush.signalLayerChange(layer);
+		this.hooks.call("current_layer_change", layer);
 	}
 
 	isPanning() {
@@ -3214,9 +3465,29 @@ class RenderContext {
 
 		const selection = await Selection.fromNodeRefs(this, [nodeRef]);
 
+		const matchesTile = (tile, selection) => {
+			if(tile.closestNodeRef && selection.hasNodeRef(tile.closestNodeRef)) {
+				return true;
+			}
+
+			for(const politicalNodeId of tile.nearbyPoliticalNodeIds) {
+				if(selection.hasNodeId(politicalNodeId)) {
+					return true;
+				}
+			}
+
+			for(const annotationNodeId of tile.nearbyAnnotationNodeIds) {
+				if(selection.hasNodeId(annotationNodeId)) {
+					return true;
+				}
+			}
+
+			return false;
+		};
+
 		let tileCount = 0;
 		for(const tile of this.drawnTiles) {
-			if(tile.closestNodeRef && selection.hasNodeRef(tile.closestNodeRef)) {
+			if(matchesTile(tile, selection)) {
 				const tileCenter = tile.getCenter();
 				const drawnTileCenter = tileCenter.subtract(this.scrollOffset);
 				if(drawnTileCenter.x >= screenBox.a.x && drawnTileCenter.x <= screenBox.b.x && drawnTileCenter.y >= screenBox.a.y && drawnTileCenter.y <= screenBox.b.y) {
@@ -3275,7 +3546,7 @@ class RenderContext {
 	async recalculateSelection() {
 		if(this.wantRecheckSelection) {
 			this.wantRecheckSelection = false;
-			const closestNodeRef = await this.getDrawnNodeAtCanvasPoint(this.mousePosition);
+			const closestNodeRef = await this.getDrawnNodeAtCanvasPoint(this.mousePosition, this.getCurrentLayer());
 			if(closestNodeRef) {
 				this.hoverSelection = await Selection.fromNodeRefs(this, [closestNodeRef]);
 			}
@@ -3304,13 +3575,22 @@ class RenderContext {
 		return 0;
 	}
 
-	async getDrawnNodeAtCanvasPoint(point) {
+	async getDrawnNodeAtCanvasPoint(point, layer) {
 		const tilePosition = point.add(this.scrollOffset).map((c) => Math.floor(c / Tile.SIZE));
 		const tX = this.tiles[tilePosition.x];
 		if(tX) {
 			const tile = tX[tilePosition.y];
 			if(tile) {
-				return tile.closestNodeRef;
+				const layerType = layer.getType();
+				if(layerType === "geographical") {
+					return tile.closestNodeRef;
+				}
+				else if(layerType === "political") {
+					return tile.closestPoliticalNodeRef;
+				}
+				else if(layerType === "annotation") {
+					return tile.closestAnnotationNodeRef;
+				}
 			}
 		}
 
@@ -3491,7 +3771,7 @@ class RenderContext {
 				const tY = this.nodeIdToTiles[nodeId][x];
 				for(const y in tY) {
 					const tile = tY[y];
-					if(!clearedTiles.has(tile) && tile.closestNodeRef.id === nodeId) {
+					if(!clearedTiles.has(tile) && ((tile.closestNodeRef && tile.closestNodeRef.id === nodeId) || tile.nearbyPoliticalNodeIds.has(nodeId) || tile.nearbyAnnotationNodeIds.has(nodeId))) {
 						clearedTiles.add(tile);
 						const withinY = y >= screenBoxTiles.a.y && y <= screenBoxTiles.b.y;
 						const megaTile = tile.megaTile;
@@ -3501,7 +3781,18 @@ class RenderContext {
 							for(const nodeId of megaTile.popRedraw()) {
 								updatedNodeIds.add(nodeId);
 							}
-							updatedNodeIds.add(tile.closestNodeRef.id);
+
+							if(tile.closestNodeRef) {
+								updatedNodeIds.add(tile.closestNodeRef.id);
+							}
+
+							for(const nodeId of tile.nearbyPoliticalNodeIds) {
+								updatedNodeIds.add(nodeId);
+							}
+
+							for(const nodeId of tile.nearbyAnnotationNodeIds) {
+								updatedNodeIds.add(nodeId);
+							}
 						}
 					}
 				}
@@ -3743,11 +4034,13 @@ class RenderContext {
 		for await (const nodeRef of this.drawnNodes()) {
 			const name = await nodeRef.getPString("name");
 			if(name !== undefined) {
+				const layer = (await nodeRef.getType()).def.layer;
 				const position = await this.getNamePosition(nodeRef);
 				const selected = (this.selection.hasNodeRef(nodeRef) || this.hoverSelection.hasNodeRef(nodeRef));
-				const size = selected ? 24 : position.size;
+				const size = (selected ? 24 : position.size) * (this.getCurrentLayer().getType() === layer ? 1 : 0.5);
 				if(size > 0) {
-					c.font = selected ? `bold ${size}px serif` : `${size}px serif`;
+					const font = (this.getCurrentLayer().getType() === layer) ? "serif" : "sans";
+					c.font = selected ? `bold ${size}px ${font}` : `${size}px ${font}`;
 					const measure = c.measureText(name);
 					const height = Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent);
 					const where = position.where.subtract(new Vector3(measure.width / 2, height / 2, 0, 0));
@@ -3782,7 +4075,7 @@ class RenderContext {
 		infoLine("Change brush mode with (A)dd, (S)elect or (D)elete. ");
 
 		// Debug help
-		infoLine("Press N to set or edit an object's name. Scroll to zoom.");
+		infoLine("Press N to set or edit an object's name. Scroll to zoom. L to change layer.");
 		if(this.brush instanceof AddBrush) {
 			infoLine("Click to add terrain");
 			infoLine("Hold Q while scrolling to change brush terrain/type; hold W while scrolling to change brush size.");
@@ -4055,6 +4348,7 @@ class Mapper {
 		await nodeRef.setCenter(point);
 		await nodeRef.setEffectiveCenter(point);
 		await nodeRef.setType(options.type);
+		await nodeRef.setLayer(this.backend.layerRegistry.get(options.type.def.layer));
 		await nodeRef.setRadius(options.radius);
 		await this.hooks.call("insertNode", nodeRef);
 		return nodeRef;
