@@ -101,6 +101,8 @@ class RenderContext {
 
 		this.brush = this.brushes.add;
 
+		this.currentLayer = this.mapper.backend.layerRegistry.getDefault();
+
 		this.hoverSelection = new Selection(this, []);
 		this.selection = new Selection(this, []);
 
@@ -226,6 +228,11 @@ class RenderContext {
 			else if(event.key === "s") {
 				this.changeBrush(this.brushes.select);
 			}
+			else if(event.key === "l") {
+				const layerArray = Array.from(this.mapper.backend.layerRegistry.getLayers());
+				const layerIdArray = layerArray.map(layer => layer.id);
+				this.setCurrentLayer(layerArray[(layerIdArray.indexOf(this.getCurrentLayer().id) + 1) % layerArray.length]);
+			}
 			else if(event.key === "`") {
 				this.debugMode = !this.debugMode;
 			}
@@ -327,6 +334,17 @@ class RenderContext {
 		setTimeout(this.applyZoom.bind(this), 10);
 
 		this.changeBrush(this.brushes.add);
+		this.setCurrentLayer(this.getCurrentLayer());
+	}
+
+	getCurrentLayer() {
+		return this.currentLayer;
+	}
+
+	setCurrentLayer(layer) {
+		this.currentLayer = layer;
+		this.brush.signalLayerChange(layer);
+		this.hooks.call("current_layer_change", layer);
 	}
 
 	isPanning() {
@@ -360,9 +378,29 @@ class RenderContext {
 
 		const selection = await Selection.fromNodeRefs(this, [nodeRef]);
 
+		const matchesTile = (tile, selection) => {
+			if(tile.closestNodeRef &amp;&amp; selection.hasNodeRef(tile.closestNodeRef)) {
+				return true;
+			}
+
+			for(const politicalNodeId of tile.nearbyPoliticalNodeIds) {
+				if(selection.hasNodeId(politicalNodeId)) {
+					return true;
+				}
+			}
+
+			for(const annotationNodeId of tile.nearbyAnnotationNodeIds) {
+				if(selection.hasNodeId(annotationNodeId)) {
+					return true;
+				}
+			}
+
+			return false;
+		};
+
 		let tileCount = 0;
 		for(const tile of this.drawnTiles) {
-			if(tile.closestNodeRef &amp;&amp; selection.hasNodeRef(tile.closestNodeRef)) {
+			if(matchesTile(tile, selection)) {
 				const tileCenter = tile.getCenter();
 				const drawnTileCenter = tileCenter.subtract(this.scrollOffset);
 				if(drawnTileCenter.x >= screenBox.a.x &amp;&amp; drawnTileCenter.x &lt;= screenBox.b.x &amp;&amp; drawnTileCenter.y >= screenBox.a.y &amp;&amp; drawnTileCenter.y &lt;= screenBox.b.y) {
@@ -421,7 +459,7 @@ class RenderContext {
 	async recalculateSelection() {
 		if(this.wantRecheckSelection) {
 			this.wantRecheckSelection = false;
-			const closestNodeRef = await this.getDrawnNodeAtCanvasPoint(this.mousePosition);
+			const closestNodeRef = await this.getDrawnNodeAtCanvasPoint(this.mousePosition, this.getCurrentLayer());
 			if(closestNodeRef) {
 				this.hoverSelection = await Selection.fromNodeRefs(this, [closestNodeRef]);
 			}
@@ -450,13 +488,22 @@ class RenderContext {
 		return 0;
 	}
 
-	async getDrawnNodeAtCanvasPoint(point) {
+	async getDrawnNodeAtCanvasPoint(point, layer) {
 		const tilePosition = point.add(this.scrollOffset).map((c) => Math.floor(c / Tile.SIZE));
 		const tX = this.tiles[tilePosition.x];
 		if(tX) {
 			const tile = tX[tilePosition.y];
 			if(tile) {
-				return tile.closestNodeRef;
+				const layerType = layer.getType();
+				if(layerType === "geographical") {
+					return tile.closestNodeRef;
+				}
+				else if(layerType === "political") {
+					return tile.closestPoliticalNodeRef;
+				}
+				else if(layerType === "annotation") {
+					return tile.closestAnnotationNodeRef;
+				}
 			}
 		}
 
@@ -637,7 +684,7 @@ class RenderContext {
 				const tY = this.nodeIdToTiles[nodeId][x];
 				for(const y in tY) {
 					const tile = tY[y];
-					if(!clearedTiles.has(tile) &amp;&amp; tile.closestNodeRef.id === nodeId) {
+					if(!clearedTiles.has(tile) &amp;&amp; ((tile.closestNodeRef &amp;&amp; tile.closestNodeRef.id === nodeId) || tile.nearbyPoliticalNodeIds.has(nodeId) || tile.nearbyAnnotationNodeIds.has(nodeId))) {
 						clearedTiles.add(tile);
 						const withinY = y >= screenBoxTiles.a.y &amp;&amp; y &lt;= screenBoxTiles.b.y;
 						const megaTile = tile.megaTile;
@@ -647,7 +694,18 @@ class RenderContext {
 							for(const nodeId of megaTile.popRedraw()) {
 								updatedNodeIds.add(nodeId);
 							}
-							updatedNodeIds.add(tile.closestNodeRef.id);
+
+							if(tile.closestNodeRef) {
+								updatedNodeIds.add(tile.closestNodeRef.id);
+							}
+
+							for(const nodeId of tile.nearbyPoliticalNodeIds) {
+								updatedNodeIds.add(nodeId);
+							}
+
+							for(const nodeId of tile.nearbyAnnotationNodeIds) {
+								updatedNodeIds.add(nodeId);
+							}
 						}
 					}
 				}
@@ -889,11 +947,13 @@ class RenderContext {
 		for await (const nodeRef of this.drawnNodes()) {
 			const name = await nodeRef.getPString("name");
 			if(name !== undefined) {
+				const layer = (await nodeRef.getType()).def.layer;
 				const position = await this.getNamePosition(nodeRef);
 				const selected = (this.selection.hasNodeRef(nodeRef) || this.hoverSelection.hasNodeRef(nodeRef));
-				const size = selected ? 24 : position.size;
+				const size = (selected ? 24 : position.size) * (this.getCurrentLayer().getType() === layer ? 1 : 0.5);
 				if(size > 0) {
-					c.font = selected ? `bold ${size}px serif` : `${size}px serif`;
+					const font = (this.getCurrentLayer().getType() === layer) ? "serif" : "sans";
+					c.font = selected ? `bold ${size}px ${font}` : `${size}px ${font}`;
 					const measure = c.measureText(name);
 					const height = Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent);
 					const where = position.where.subtract(new Vector3(measure.width / 2, height / 2, 0, 0));
@@ -928,7 +988,7 @@ class RenderContext {
 		infoLine("Change brush mode with (A)dd, (S)elect or (D)elete. ");
 
 		// Debug help
-		infoLine("Press N to set or edit an object's name. Scroll to zoom.");
+		infoLine("Press N to set or edit an object's name. Scroll to zoom. L to change layer.");
 		if(this.brush instanceof AddBrush) {
 			infoLine("Click to add terrain");
 			infoLine("Hold Q while scrolling to change brush terrain/type; hold W while scrolling to change brush size.");
@@ -1201,6 +1261,7 @@ class Mapper {
 		await nodeRef.setCenter(point);
 		await nodeRef.setEffectiveCenter(point);
 		await nodeRef.setType(options.type);
+		await nodeRef.setLayer(this.backend.layerRegistry.get(options.type.def.layer));
 		await nodeRef.setRadius(options.radius);
 		await this.hooks.call("insertNode", nodeRef);
 		return nodeRef;
@@ -1290,7 +1351,7 @@ export { Mapper };
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Sat Sep 24 2022 02:20:02 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Mon Oct 03 2022 17:55:54 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>
