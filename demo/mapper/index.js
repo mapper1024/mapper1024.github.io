@@ -822,6 +822,26 @@ class NodeType {
 	getDescription() {
 		return this.id;
 	}
+
+	getColor() {
+		return this.def.color || "black";
+	}
+
+	getLayer() {
+		return this.def.layer || "geographical";
+	}
+
+	getScale() {
+		return this.def.scale || "terrain";
+	}
+
+	isArea() {
+		return (this.def.area === false) ? false : true;
+	}
+
+	isPath() {
+		return !!this.def.path;
+	}
 }
 
 class NodeTypeRegistry {
@@ -830,68 +850,59 @@ class NodeTypeRegistry {
 
 		this.registerType(new NodeType("water", {
 			color: "darkblue",
-			layer: "geographical",
-			scale: "terrain",
 		}));
 
 		this.registerType(new NodeType("grass", {
 			color: "lightgreen",
-			layer: "geographical",
-			scale: "terrain",
 		}));
 
 		this.registerType(new NodeType("forest", {
 			color: "darkgreen",
-			layer: "geographical",
-			scale: "terrain",
 		}));
 
 		this.registerType(new NodeType("tree", {
 			color: "darkgreen",
-			layer: "geographical",
 			scale: "explicit",
 		}));
 
 		this.registerType(new NodeType("rocks", {
 			color: "gray",
-			layer: "geographical",
-			scale: "terrain",
 		}));
 
 		this.registerType(new NodeType("stone", {
 			color: "gray",
-			layer: "geographical",
 			scale: "explicit",
 		}));
 
 		this.registerType(new NodeType("road", {
 			color: "brown",
-			layer: "geographical",
-			scale: "terrain",
+			path: true,
 		}));
 
 		this.registerType(new NodeType("buildings", {
 			color: "yellow",
-			layer: "geographical",
-			scale: "terrain",
 		}));
 
 		this.registerType(new NodeType("tower", {
 			color: "yellow",
-			layer: "geographical",
 			scale: "explicit",
 		}));
 
 		this.registerType(new NodeType("region", {
 			color: "orange",
 			layer: "political",
-			scale: "terrain",
+		}));
+
+		this.registerType(new NodeType("route", {
+			color: "white",
+			layer: "political",
+			path: true,
+			area: false,
 		}));
 
 		this.registerType(new NodeType("note", {
 			color: "white",
 			layer: "annotation",
-			scale: "terrain",
 		}));
 	}
 
@@ -1858,7 +1869,7 @@ class NodeCleanupAction extends Action {
 	async perform() {
 		const toRemove = new Set();
 		const mergePairs = [];
-		const vertices = await asyncFrom(this.getAllVertices());
+		const vertices = await asyncFrom(this.getAllPointVertices());
 
 		let sum = Vector3.ZERO;
 		let count = 0;
@@ -1917,13 +1928,15 @@ class NodeCleanupAction extends Action {
 		}
 	}
 
-	async * getAllVertices() {
+	async * getAllPointVertices() {
 		for await (const nodeRef of this.getAllNodes()) {
-			yield {
-				nodeRef: nodeRef,
-				radius: await nodeRef.getRadius(),
-				point: await nodeRef.getCenter(),
-			};
+			if(await nodeRef.getNodeType() === "point") {
+				yield {
+					nodeRef: nodeRef,
+					radius: await nodeRef.getRadius(),
+					point: await nodeRef.getCenter(),
+				};
+			}
 		}
 	}
 }
@@ -2096,6 +2109,8 @@ class DrawPathAction extends Action {
 				}
 			}
 
+			let pathNode;
+
 			if(ok) {
 				if(last || first) {
 					// This is the beginning or end of a stroke, draw all four "sides".
@@ -2109,12 +2124,21 @@ class DrawPathAction extends Action {
 
 				placedNodes.push(...placedForVertex);
 
+				if(this.options.nodeType.isPath()) {
+					pathNode = await this.context.mapper.insertNode(where, "path", {
+						type: this.options.nodeType,
+						radius: this.options.radius,
+						parent: this.options.parent,
+					});
+				}
+
 				// Record drawing event for calculating the full path.
 				drawEvent.pushState({
 					where: where,
 					wherePixel: wherePixel,
 					angle: angle,
 					borders: placedForVertex,
+					pathNode: pathNode,
 				});
 			}
 
@@ -2124,6 +2148,10 @@ class DrawPathAction extends Action {
 			// Connect edges to the last drawn position.
 			if(lastState !== undefined) {
 				await connectNodes(placedForVertex, lastState.borders);
+
+				if(pathNode) {
+					await this.context.mapper.backend.createEdge(pathNode.id, lastState.pathNode.id);
+				}
 			}
 		}
 
@@ -2185,7 +2213,7 @@ class AddBrush extends Brush {
 		this.setNodeTypeIndex(0);
 
 		const reset = (layer) => {
-			this.nodeTypes = this.originalNodeTypes.filter((nodeType) => nodeType.def.layer === layer.getType());
+			this.nodeTypes = this.originalNodeTypes.filter((nodeType) => nodeType.getLayer() === layer.getType());
 			this.setNodeTypeIndex(0);
 		};
 
@@ -2206,7 +2234,7 @@ class AddBrush extends Brush {
 			container.appendChild(list);
 
 			for(const nodeType of this.nodeTypes) {
-				if(nodeType.def.layer === layer.getType()) {
+				if(nodeType.getLayer() === layer.getType()) {
 					const index = this.nodeTypes.indexOf(nodeType);
 
 					const li = document.createElement("li");
@@ -2222,9 +2250,9 @@ class AddBrush extends Brush {
 
 					const c = button.getContext("2d");
 
-					c.fillStyle = nodeType.def.color;
+					c.fillStyle = nodeType.getColor();
 
-					if(nodeType.def.scale === "explicit") {
+					if(nodeType.getScale() === "explicit") {
 						c.beginPath();
 						c.arc(button.width / 2, button.height / 2, Math.min(button.height, button.width) / 2, 0, 2 * Math.PI, false);
 						c.fill();
@@ -2538,6 +2566,43 @@ class DeleteBrush extends Brush {
 	}
 }
 
+class DistancePegBrush extends Brush {
+	constructor(context, n) {
+		super(context);
+		this.n = n;
+	}
+
+	displayButton(button) {
+		button.innerText = `Peg (${this.n})`;
+		button.title = this.getDescription();
+	}
+
+	getDescription() {
+		return `Distance Peg (${this.n})`;
+	}
+
+	async draw(context, position) {
+		context.beginPath();
+		context.arc(position.x, position.y, 4, 0, 2 * Math.PI, false);
+		context.fillStyle = "white";
+		context.fill();
+
+		context.textBaseline = "alphabetic";
+		context.font = "16px mono";
+		const sizeText = `Placing Distance Peg ${this.n}`;
+		context.fillText(sizeText, position.x - context.measureText(sizeText).width / 2, position.y - 16);
+
+		context.textBaseline = "top";
+		const worldPosition = this.context.canvasPointToMap(position).map(c => this.context.mapper.unitsToMeters(c)).round();
+		const positionText = `${worldPosition.x}m, ${worldPosition.y}m, ${this.context.mapper.unitsToMeters(await this.context.getCursorAltitude())}m`;
+		context.fillText(positionText, position.x - context.measureText(positionText).width / 2, position.y + 16);
+	}
+
+	async activate(where) {
+		this.context.distanceMarkers[this.n] = this.context.canvasPointToMap(where);
+	}
+}
+
 class TranslateEvent extends DragEvent {
 	constructor(context, startPoint, nodeRefs) {
 		super(context, startPoint);
@@ -2711,6 +2776,8 @@ class Tile {
 	async addNode(nodeRef) {
 		const nodeLayer = await nodeRef.getLayer();
 		const nodeLayerType = nodeLayer.getType();
+		const nodeType = await nodeRef.getType();
+		const isArea = nodeType.isArea();
 		const nodeCenterInUnits = await nodeRef.getEffectiveCenter();
 		const nodeCenterInPixels = this.context.mapPointToTileCanvas(nodeCenterInUnits);
 		const distance = nodeCenterInPixels.subtract(this.getCenter()).length();
@@ -2739,7 +2806,7 @@ class Tile {
 
 				this.nearbyPoliticalNodeIds.add(nodeRef.id);
 				const parent = await nodeRef.getParent();
-				if(parent) {
+				if(isArea && parent) {
 					this.nearbyBorderMasterNodeIds.add(parent.id);
 				}
 			}
@@ -2751,7 +2818,7 @@ class Tile {
 
 				this.nearbyAnnotationNodeIds.add(nodeRef.id);
 				const parent = await nodeRef.getParent();
-				if(parent) {
+				if(isArea && parent) {
 					this.nearbyBorderMasterNodeIds.add(parent.id);
 				}
 			}
@@ -2883,7 +2950,7 @@ class Tile {
 
 		function getTypeColors(type) {
 			const acolors = colors[type.id];
-			return acolors || [type.def.color];
+			return acolors || [type.getColor()];
 		}
 
 		function getOurColors() {
@@ -2995,7 +3062,7 @@ class Brushbar {
 
 		const updateSize = (brush) => {
 			if(brush === this.context.brush) {
-				size.innerText = `Radius ${Math.floor(brush.sizeInMeters() + 0.5)}m`;
+				size.innerText = `Radius ${Math.floor(brush.sizeInMeters() + 0.5)}m\n1px = ${this.context.mapper.unitsToMeters(this.context.pixelsToUnits(1)).toFixed(2)}m`;
 			}
 		};
 
@@ -3175,7 +3242,7 @@ function style() {
 }
 
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.2.6";
+let version = "0.2.7";
 
 /** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
@@ -3211,6 +3278,7 @@ class RenderContext {
 		this.tiles = {};
 		this.megaTiles = {};
 		this.explicitDrawn = {};
+		this.pathDrawn = {};
 		this.drawnNodeIds = new Set();
 		this.offScreenDrawnNodeIds = new Set();
 		this.drawnTiles = [];
@@ -3233,10 +3301,15 @@ class RenderContext {
 
 		this.altitudeIncrement = this.mapper.metersToUnits(5);
 
+		this.distanceMarkers = {};
+
 		this.brushes = {
 			add: new AddBrush(this),
 			select: new SelectBrush(this),
 			"delete": new DeleteBrush(this),
+			"peg1": new DistancePegBrush(this, 1),
+			"peg2": new DistancePegBrush(this, 2),
+
 		};
 
 		this.brush = this.brushes.add;
@@ -3345,6 +3418,14 @@ class RenderContext {
 						this.recalculateTilesNodesTranslate(drawnNodes);
 					});
 				}
+				else if(event.key === "=") {
+					this.requestZoomChange(this.zoom - 1);
+					event.preventDefault();
+				}
+				else if(event.key === "-") {
+					this.requestZoomChange(this.zoom + 1);
+					event.preventDefault();
+				}
 			}
 			else if(event.key === "ArrowUp") {
 				this.setScrollOffset(this.scrollOffset.subtract(new Vector3(0, this.screenSize().y / 3, 0)).round());
@@ -3357,6 +3438,12 @@ class RenderContext {
 			}
 			else if(event.key === "ArrowRight") {
 				this.setScrollOffset(this.scrollOffset.add(new Vector3(this.screenSize().x / 3, 0, 0)).round());
+			}
+			else if(event.key === "1") {
+				this.changeBrush(this.brushes.peg1);
+			}
+			else if(event.key === "2") {
+				this.changeBrush(this.brushes.peg2);
 			}
 			else if(event.key === "d") {
 				this.changeBrush(this.brushes["delete"]);
@@ -3488,6 +3575,10 @@ class RenderContext {
 
 	isPanning() {
 		return this.mouseDragEvents[2] instanceof PanEvent;
+	}
+
+	isCalculatingDistance() {
+		return this.brush instanceof DistancePegBrush;
 	}
 
 	setScrollOffset(value) {
@@ -3861,6 +3952,7 @@ class RenderContext {
 			this.drawnNodeIds.delete(removedId);
 			this.offScreenDrawnNodeIds.delete(removedId);
 			delete this.explicitDrawn[removedId];
+			delete this.pathDrawn[removedId];
 		}
 
 		for(const nodeId of updatedNodeIds) {
@@ -3869,9 +3961,11 @@ class RenderContext {
 
 				this.drawnNodeIds.add(nodeId);
 
-				if(await nodeRef.getNodeType() === "object") {
+				const nodeType = await nodeRef.getNodeType();
+
+				if(nodeType === "object") {
 					const nodeType = await nodeRef.getType();
-					if(nodeType.def.scale === "explicit") {
+					if(nodeType.getScale() === "explicit") {
 						const center = await nodeRef.getEffectiveCenter();
 						const radius = await nodeRef.getRadius();
 						this.explicitDrawn[nodeId] = {
@@ -3881,8 +3975,14 @@ class RenderContext {
 						};
 					}
 				}
+				else if(nodeType === "path") {
+					const center = await nodeRef.getCenter();
+					this.pathDrawn[nodeId] = {
+						center: center,
+						nodeRef: nodeRef,
+					};
+				}
 				else {
-
 					if(this.nodeIdToTiles[nodeRef.id] === undefined) {
 						this.nodeIdToTiles[nodeRef.id] = {};
 					}
@@ -3988,6 +4088,33 @@ class RenderContext {
 				c.globalAlpha = 1;
 				c.fillStyle = "white";
 				c.fillText(text, where.x - r / 2, where.y - r / 2, r);
+			}
+		}
+
+		const drawn = new Set();
+
+		for(const nodeId in this.pathDrawn) {
+			if(!drawn.has(nodeId)) {
+				drawn.add(nodeId);
+
+				const p = this.pathDrawn[nodeId];
+				const nodeRef = p.nodeRef;
+
+				const position = this.mapPointToCanvas(p.center);
+
+				// Draw edges.
+				for await (const dirEdgeRef of nodeRef.getEdges()) {
+					if(!drawn.has(dirEdgeRef.id)) {
+						drawn.add(dirEdgeRef.id);
+						const otherNodeRef = await dirEdgeRef.getDirOtherNode();
+						const otherPosition = this.mapPointToCanvas(await otherNodeRef.getCenter());
+						c.strokeStyle = "white";
+						c.beginPath();
+						c.moveTo(position.x, position.y);
+						c.lineTo(otherPosition.x, otherPosition.y);
+						c.stroke();
+					}
+				}
 			}
 		}
 	}
@@ -4115,7 +4242,7 @@ class RenderContext {
 		for await (const nodeRef of this.drawnNodes()) {
 			const name = await nodeRef.getPString("name");
 			if(name !== undefined) {
-				const layer = (await nodeRef.getType()).def.layer;
+				const layer = (await nodeRef.getType()).getLayer();
 				const position = await this.getNamePosition(nodeRef);
 				const selected = (this.selection.hasNodeRef(nodeRef) || this.hoverSelection.hasNodeRef(nodeRef));
 				const size = (selected ? 24 : position.size) * (this.getCurrentLayer().getType() === layer ? 1 : 0.5);
@@ -4153,10 +4280,10 @@ class RenderContext {
 			infoLineY += 24;
 		}
 
-		infoLine("Change brush mode with (A)dd, (S)elect or (D)elete. ");
+		infoLine("Change brush mode with (A)dd, (S)elect or (D)elete. Press 1 or 2 to measure distances.");
 
 		// Debug help
-		infoLine("Press N to set or edit an object's name. Scroll to zoom. L to change layer.");
+		infoLine("Press N to set or edit an object's name. Scroll or Ctrl+Plus/Minus to zoom. L to change layer.");
 		if(this.brush instanceof AddBrush) {
 			infoLine("Click to add terrain");
 			infoLine("Hold Q while scrolling to change brush terrain/type; hold W while scrolling to change brush size.");
@@ -4174,6 +4301,16 @@ class RenderContext {
 		await this.hooks.call("draw_help", {
 			infoLine: infoLine,
 		});
+
+		if(this.isCalculatingDistance()) {
+			const a = this.distanceMarkers[1];
+			const b = this.distanceMarkers[2];
+
+			if(a && b) {
+				const meters = this.mapper.unitsToMeters(a.subtract(b).length());
+				infoLine(`Distance between markers: ${Math.floor(meters + 0.5)}m (${Math.floor(meters / 1000 + 0.5)}km)`);
+			}
+		}
 
 		if(this.debugMode) {
 			infoLine(`${Object.keys(this.tileRenders).length} cached tiles | ${this.drawnNodeIds.size} drawn nodes, ${this.offScreenDrawnNodeIds.size} on border`);
@@ -4282,6 +4419,74 @@ class RenderContext {
 		c.fillText(text, x, 0);
 	}
 
+	async drawPegs() {
+		const c = this.canvas.getContext("2d");
+
+		const colors = {
+			1: "red",
+			2: "blue",
+		};
+
+		const positions = {};
+
+		for(const distanceMarkerN in this.distanceMarkers) {
+			const distanceMarker = this.distanceMarkers[distanceMarkerN];
+			const position = this.mapPointToCanvas(distanceMarker);
+			positions[distanceMarkerN] = position;
+			c.beginPath();
+			c.arc(position.x, position.y, 4, 0, 2 * Math.PI, false);
+			c.fillStyle = colors[distanceMarkerN] || "black";
+			c.fill();
+
+			c.fillStyle = "white";
+
+			c.textBaseline = "alphabetic";
+			c.font = "16px mono";
+			const worldPosition = this.canvasPointToMap(position).map(c => this.mapper.unitsToMeters(c)).round();
+			const text = `${worldPosition.x}m, ${worldPosition.y}m, ${worldPosition.z}m`;
+			c.fillText(text, position.x - c.measureText(text).width / 2, position.y - 16);
+		}
+
+		if(positions[1] && positions[2]) {
+			c.lineWidth = 3;
+
+			c.setLineDash([5, 15]);
+
+			c.strokeStyle = "black";
+			c.beginPath();
+			c.moveTo(positions[1].x, positions[1].y);
+			c.lineTo(positions[2].x, positions[2].y);
+			c.stroke();
+
+			c.setLineDash([11, 22]);
+
+			c.strokeStyle = "white";
+			c.beginPath();
+			c.moveTo(positions[1].x, positions[1].y);
+			c.lineTo(positions[2].x, positions[2].y);
+			c.stroke();
+
+			c.setLineDash([]);
+			c.lineWidth = 1;
+
+			const meters = this.mapper.unitsToMeters(this.distanceMarkers[1].subtract(this.distanceMarkers[2]).length());
+
+			c.textBaseline = "top";
+			c.font = "16px mono";
+			const position = this.mapPointToCanvas(positions[1].add(positions[2]).divideScalar(2).round());
+			const text = `Distance between markers: ${Math.floor(meters + 0.5)}m (${Math.floor(meters / 1000 + 0.5)}km)`;
+			const measure = c.measureText(text);
+			const height = Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent);
+			c.globalAlpha = 0.25;
+			c.fillStyle = "black";
+			c.fillRect(position.x - measure.width / 2, position.y, measure.width, height);
+			c.globalAlpha = 1;
+			c.fillStyle = "white";
+			c.fillText(text, position.x - measure.width / 2, position.y);
+
+		}
+	}
+
 	/** Completely redraw the displayed UI. */
 	async redraw() {
 		await this.clearCanvas();
@@ -4290,6 +4495,9 @@ class RenderContext {
 		if(!this.isPanning()) {
 			await this.drawSelection();
 			await this.drawLabels();
+		}
+		if(this.isCalculatingDistance()) {
+			await this.drawPegs();
 		}
 		await this.drawBrush();
 
@@ -4432,7 +4640,7 @@ class Mapper {
 		await nodeRef.setCenter(point);
 		await nodeRef.setEffectiveCenter(point);
 		await nodeRef.setType(options.type);
-		await nodeRef.setLayer(this.backend.layerRegistry.get(options.type.def.layer));
+		await nodeRef.setLayer(this.backend.layerRegistry.get(options.type.getLayer()));
 		await nodeRef.setRadius(options.radius);
 		await this.hooks.call("insertNode", nodeRef);
 		return nodeRef;
