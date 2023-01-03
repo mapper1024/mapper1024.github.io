@@ -63,7 +63,6 @@ class RenderContext {
 		this.recalculateUpdate = [];
 		this.recalculateRemoved = [];
 		this.recalculateTranslated = [];
-		this.recalculateSelected = [];
 
 		this.wantRecheckSelection = true;
 		this.wantUpdateSelection = true;
@@ -90,8 +89,11 @@ class RenderContext {
 
 		this.scrollOffset = Vector3.ZERO;
 		this.defaultZoom = 5;
+		this.maxZoom = 30;
 		this.zoom = this.defaultZoom;
 		this.requestedZoom = this.zoom;
+		this.lastZoomRequest = 0;
+		this.zoomRequestTimeout = 1000;
 
 		this.altitudeIncrement = this.mapper.metersToUnits(5);
 
@@ -114,12 +116,16 @@ class RenderContext {
 		this.hoverSelection = new Selection(this, []);
 		this.selection = new Selection(this, []);
 
+		this.backgroundNodeCache = {};
+
 		this.styleElement = style();
 		document.head.appendChild(this.styleElement);
 
 		// The UI is just a canvas.
 		// We will keep its size filling the parent element.
 		this.canvas = document.createElement("canvas");
+		this.selectionCanvas = document.createElement("canvas");
+		this.selectionCanvasScroll = Vector3.ZERO;
 		this.canvas.tabIndex = 1;
 		this.parent.appendChild(this.canvas);
 
@@ -141,6 +147,12 @@ class RenderContext {
 		});
 
 		this.canvas.addEventListener("mousedown", async (event) => {
+			if(this.requestedZoom !== this.zoom) {
+				// Forcibly apply the last zoom request.
+				this.lastZoomRequest = 0;
+				return;
+			}
+
 			if(this.mouseDragEvents[event.button] === undefined) {
 				const where = new Vector3(event.x, event.y, 0);
 
@@ -191,6 +203,9 @@ class RenderContext {
 			for(const shortcut of this.keyboardShortcuts) {
 				if(shortcut.filter(this, event)) {
 					if(await shortcut.handler() !== true) {
+						// Shortcuts can do anything, so let's forget about keeping track of which keys are down.
+						// It's possible that a dialog might absorb the keyup event, leaving modifiers stuck in our pressed keys ledger.
+						this.clearKeysDown();
 						return;
 					}
 				}
@@ -213,11 +228,11 @@ class RenderContext {
 					this.setScrollOffset(Vector3.ZERO);
 				}
 				else if(event.key === "=") {
-					this.requestZoomChange(this.zoom - 1);
+					this.requestZoomChangeDelta(-1);
 					event.preventDefault();
 				}
 				else if(event.key === "-") {
-					this.requestZoomChange(this.zoom + 1);
+					this.requestZoomChangeDelta(1);
 					event.preventDefault();
 				}
 			}
@@ -259,7 +274,7 @@ class RenderContext {
 			else if(event.key === "n") {
 				const nodeRef = await this.hoverSelection.getParent();
 				if(nodeRef) {
-					const where = (await this.getNamePosition(nodeRef)).center;
+					const where = (await this.getNamePosition(nodeRef)).center.subtract(this.scrollOffset);
 
 					const input = document.createElement("input");
 					input.value = (await nodeRef.getPString("name")) || "";
@@ -331,7 +346,7 @@ class RenderContext {
 					}
 				}
 				else {
-					this.requestZoomChange(this.zoom + (delta &lt; 0 ? -1 : 1));
+					this.requestZoomChangeDelta((delta &lt; 0 ? -1 : 1));
 				}
 
 				this.scrollDelta = 0;
@@ -354,12 +369,18 @@ class RenderContext {
 		this.setCurrentLayer(this.getCurrentLayer());
 	}
 
+	msSinceLastZoomRequest() {
+		return performance.now() - this.lastZoomRequest;
+	}
+
 	async getNamePosition(nodeRef) {
-		const labelPositions = this.labelPositions[this.zoom];
-		if(labelPositions !== undefined) {
-			const labelPositionOnCanvas = labelPositions[nodeRef.id];
-			if(labelPositionOnCanvas !== undefined) {
-				return labelPositionOnCanvas;
+		if(!(await nodeRef.getType()).getScale() === "explicit") {
+			const labelPositions = this.labelPositions[this.zoom];
+			if(labelPositions !== undefined) {
+				const labelPositionOnCanvas = labelPositions[nodeRef.id];
+				if(labelPositionOnCanvas !== undefined) {
+					return labelPositionOnCanvas;
+				}
 			}
 		}
 
@@ -408,7 +429,15 @@ class RenderContext {
 	}
 
 	requestZoomChange(zoom) {
-		this.requestedZoom = Math.max(1, Math.min(zoom, 30));
+		if(this.requestedZoom !== zoom) {
+			this.requestedZoom = Math.max(1, Math.min(zoom, this.maxZoom));
+			this.lastZoomRequest = performance.now();
+			this.requestRedraw();
+		}
+	}
+
+	requestZoomChangeDelta(zoomDelta) {
+		this.requestZoomChange(this.requestedZoom + zoomDelta);
 	}
 
 	forceZoom(zoom) {
@@ -426,6 +455,7 @@ class RenderContext {
 				this.hooks.add("changed_zoom", f);
 
 				this.requestZoomChange(zoom);
+				this.lastZoomRequest = 0;
 			}
 		});
 	}
@@ -441,11 +471,75 @@ class RenderContext {
 		}
 	}
 
+	async redrawSelection() {
+		const sc = this.selectionCanvas.getContext("2d");
+
+		sc.clearRect(0, 0, this.selectionCanvas.width, this.selectionCanvas.height);
+
+		const hoverPatternImage = document.createElement("canvas");
+		hoverPatternImage.width = hoverPatternImage.height = tileSize;
+
+		const hoverPatternContext = hoverPatternImage.getContext("2d");
+		hoverPatternContext.strokeStyle = "black";
+		hoverPatternContext.moveTo(0, 0);
+		hoverPatternContext.lineTo(tileSize, tileSize);
+		hoverPatternContext.stroke();
+
+		const hoverPattern = sc.createPattern(hoverPatternImage, "repeat");
+
+		const selectPatternImage = document.createElement("canvas");
+		selectPatternImage.width = selectPatternImage.height = tileSize;
+
+		const selectPatternContext = selectPatternImage.getContext("2d");
+		selectPatternContext.strokeStyle = "black";
+		selectPatternContext.moveTo(tileSize, 0);
+		selectPatternContext.lineTo(0, tileSize);
+		selectPatternContext.stroke();
+
+		const selectPattern = sc.createPattern(selectPatternImage, "repeat");
+
+		const megaTiles = this.megaTiles[this.zoom];
+		if(megaTiles !== undefined) {
+			const screenBoxInMegaTiles = this.absoluteScreenBox().map(v => v.divideScalar(megaTileSize).map(Math.floor));
+			for(let x = screenBoxInMegaTiles.a.x; x &lt;= screenBoxInMegaTiles.b.x; x++) {
+				const megaTileX = megaTiles[x];
+				if(megaTileX !== undefined) {
+					for(let y = screenBoxInMegaTiles.a.y; y &lt;= screenBoxInMegaTiles.b.y; y++) {
+						const megaTile = megaTileX[y];
+						if(megaTile !== undefined) {
+							for(const part of megaTile.parts) {
+								const nodeRef = part.nodeRef;
+								const point = part.absolutePoint.subtract(this.scrollOffset);
+
+								if(this.selection.hasNodeRef(nodeRef)) {
+									sc.fillStyle = selectPattern;
+									sc.beginPath();
+									sc.arc(point.x, point.y, part.radius, 0, 2 * Math.PI, false);
+									sc.fill();
+								}
+
+								if(this.hoverSelection.hasNodeRef(nodeRef)) {
+									sc.fillStyle = hoverPattern;
+									sc.beginPath();
+									sc.arc(point.x, point.y, part.radius, 0, 2 * Math.PI, false);
+									sc.fill();
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		this.selectionCanvasScroll = this.scrollOffset;
+	}
+
 	async recalculateSelection() {
+		const oldHoverSelection = this.hoverSelection;
+		const oldSelection = this.selection;
+
 		if(this.wantRecheckSelection &amp;&amp; !this.isAnyMouseButtonDown()) {
 			this.wantRecheckSelection = false;
-
-			const oldHoverIds = this.hoverSelection.parentNodeIds;
 
 			const closestNodePart = await this.getDrawnNodePartAtCanvasPoint(this.mousePosition, this.getCurrentLayer());
 			if(closestNodePart) {
@@ -454,27 +548,17 @@ class RenderContext {
 			else {
 				this.hoverSelection = new Selection(this, []);
 			}
-
-			const newHoverIds = this.hoverSelection.parentNodeIds;
-
-			for(const nodeId of oldHoverIds) {
-				if(!newHoverIds.has(nodeId)) {
-					this.recalculateNodesSelected([this.mapper.backend.getNodeRef(nodeId)]);
-				}
-			}
-
-			for(const nodeId of newHoverIds) {
-				if(!oldHoverIds.has(nodeId)) {
-					this.recalculateNodesSelected([this.mapper.backend.getNodeRef(nodeId)]);
-				}
-			}
 		}
 
 		if(this.wantUpdateSelection) {
 			this.wantUpdateSelection = false;
-			await this.hoverSelection.update();
-			await this.selection.update();
+			this.hoverSelection = await this.hoverSelection.updated();
+			this.selection = await this.selection.updated();
 			this.requestRedraw();
+		}
+
+		if(!oldHoverSelection.equals(this.hoverSelection) || !oldSelection.equals(this.selection)) {
+			await this.redrawSelection();
 		}
 
 		if(this.alive) {
@@ -532,26 +616,79 @@ class RenderContext {
 	}
 
 	async getBackgroundNode(nodeRef) {
-		let bestNode = null;
+		let backgroundNode = this.backgroundNodeCache[nodeRef.id];
 
-		for await (const candidateNodeRef of this.mapper.getNodesTouchingArea(Box3.fromRadius(await nodeRef.getEffectiveCenter(), this.pixelsToUnits(1)).map(v => v.noZ()), this.pixelsToUnits(1))) {
-			const candidateType = await candidateNodeRef.getType();
-			if(!candidateType.givesBackground() || candidateType.id === (await nodeRef.getType()).id || (await candidateNodeRef.getLayer()).id !== (await nodeRef.getLayer()).id || (await candidateNodeRef.getEffectiveCenter()).subtract(await nodeRef.getEffectiveCenter()).length() >= (await candidateNodeRef.getRadius())) {
+		if(backgroundNode === undefined) {
+			const parent = await nodeRef.getParent();
+
+			if(parent &amp;&amp; this.backgroundNodeCache[parent.id] === undefined) {
+				await this.buildBackgroundNodeCache(parent);
+			}
+			else {
+				await this.buildBackgroundNodeCache(nodeRef);
+			}
+
+			backgroundNode = this.backgroundNodeCache[nodeRef.id];
+		}
+
+		return backgroundNode;
+	}
+
+	async buildBackgroundNodeCache(nodeRef) {
+		const box = Box3.fromRadius(await nodeRef.getCenter(), await nodeRef.getRadius());
+		box.a.z = -Infinity;
+		box.b.z = Infinity;
+
+		const candidates = [];
+
+		const layer = await nodeRef.getLayer();
+
+		for await(const candidateNodeRef of this.mapper.getNodesTouchingArea(box, 0)) {
+			if(await candidateNodeRef.getNodeType() !== "point") {
 				continue;
 			}
 
-			if(!bestNode || (await candidateNodeRef.getEffectiveCenter()).z > (await bestNode.getEffectiveCenter()).z) {
-				bestNode = candidateNodeRef;
+			const candidateType = await candidateNodeRef.getType();
+
+			if(candidateType.givesBackground()) {
+				const candidateLayer = await candidateNodeRef.getLayer();
+				if(candidateLayer.id === layer.id) {
+					const center = (await candidateNodeRef.getEffectiveCenter());
+
+					candidates.push({
+						nodeRef: candidateNodeRef,
+						point: center.noZ(),
+						z: center.z,
+						radius: await candidateNodeRef.getRadius(),
+					});
+				}
 			}
 		}
 
-		return bestNode;
+		for(const iterable of [[nodeRef], await asyncFrom(nodeRef.getChildren())]) {
+			for(const tryNodeRef of iterable) {
+				const tryCenter = (await tryNodeRef.getEffectiveCenter()).noZ();
+				let best = null;
+				let bestZ = null;
+
+				for(const candidate of candidates) {
+					if(candidate.point.subtract(tryCenter).length() &lt;= candidate.radius) {
+						if(!best || bestZ &lt; candidate.z) {
+							best = candidate.nodeRef;
+							bestZ = candidate.z;
+						}
+					}
+				}
+
+				this.backgroundNodeCache[tryNodeRef.id] = best;
+			}
+		}
 	}
 
 	async recalculateLoop() {
 		// Change the zoom level if requested.
 		// We do this in the same async loop method as recalculating the renderings so that the rendering is never out of sync between zoom levels.
-		if(this.zoom !== this.requestedZoom) {
+		if(this.zoom !== this.requestedZoom &amp;&amp; this.msSinceLastZoomRequest() > this.zoomRequestTimeout) {
 			const oldLandmark = this.canvasPointToMap(this.mousePosition);
 			this.zoom = this.requestedZoom;
 			const newLandmark = this.canvasPointToMap(this.mousePosition);
@@ -561,8 +698,9 @@ class RenderContext {
 		}
 
 		// If anything's changed on the map, try to recalculate the renderings.
-		if(this.recalculateViewport || this.recalculateUpdate.length > 0 || this.recalculateRemoved.length > 0 || this.recalculateTranslated.length > 0 || this.recalculateSelected.length > 0) {
-			await this.recalculate(this.recalculateViewport, this.recalculateUpdate.splice(0, this.recalculateUpdate.length), this.recalculateRemoved.splice(0, this.recalculateRemoved.length), this.recalculateTranslated.splice(0, this.recalculateTranslated.length), this.recalculateSelected.splice(0, this.recalculateSelected.length));
+		if(this.recalculateViewport || this.recalculateUpdate.length > 0 || this.recalculateRemoved.length > 0 || this.recalculateTranslated.length > 0) {
+			await this.recalculate(this.recalculateViewport, this.recalculateUpdate.splice(0, this.recalculateUpdate.length), this.recalculateRemoved.splice(0, this.recalculateRemoved.length), this.recalculateTranslated.splice(0, this.recalculateTranslated.length));
+			await this.redrawSelection();
 			this.recalculateViewport = false;
 		}
 
@@ -610,6 +748,10 @@ class RenderContext {
 
 	isKeyDown(key) {
 		return !!this.pressedKeys[key];
+	}
+
+	clearKeysDown() {
+		this.pressedKeys = {};
 	}
 
 	isAnyMouseButtonDown() {
@@ -665,8 +807,17 @@ class RenderContext {
 		return path.mapOrigin((origin) => this.canvasPointToMap(origin)).mapLines((v) => v.map((a) => this.pixelsToUnits(a)));
 	}
 
+	/**
+	 * Get the zoom factor based on a specific zoom level.
+	 * @param zoom {number}
+	 * @returns {number} Zoom factor, multiply number of pixels by this factor to get map units.
+	 */
+	zoomFactor(zoom) {
+		return zoom / (1 + 20 / zoom);
+	}
+
 	pixelsToUnits(pixels) {
-		return pixels * this.zoom / (1 + 20 / this.zoom);
+		return pixels * this.zoomFactor(this.zoom);
 	}
 
 	unitsToPixels(units) {
@@ -692,6 +843,9 @@ class RenderContext {
 		// Keep the canvas matching the parent size.
 		this.canvas.width = this.parent.clientWidth;
 		this.canvas.height = this.parent.clientHeight;
+
+		this.selectionCanvas.width = this.canvas.width;
+		this.selectionCanvas.height = this.canvas.height;
 
 		this.hooks.call("size_change");
 		this.recalculateEntireViewport();
@@ -736,15 +890,10 @@ class RenderContext {
 		this.recalculateTranslated.push(...nodeRefs);
 	}
 
-	recalculateNodesSelected(nodeRefs) {
-		this.recalculateSelected.push(...nodeRefs);
-	}
 
-	async recalculate(viewport, updatedNodeRefs, removedNodeRefs, translatedNodeRefs, selectedNodeRefs) {
+	async recalculate(viewport, updatedNodeRefs, removedNodeRefs, translatedNodeRefs) {
 		const redrawNodeIds = new Set();
 		const updateNodeIds = new Set();
-
-		updatedNodeRefs.push(...selectedNodeRefs);
 
 		let drawnNodeIds = this.drawnNodeIds[this.zoom];
 		if(drawnNodeIds === undefined) {
@@ -759,9 +908,12 @@ class RenderContext {
 		const visibleNodeIds = new Set(await asyncFrom(this.visibleObjectNodes(), nodeRef => nodeRef.id));
 
 		for(const visibleNodeId of visibleNodeIds) {
-			if(viewport || !drawnNodeIds.has(visibleNodeId)) {
+			if(!drawnNodeIds.has(visibleNodeId)) {
 				redrawNodeIds.add(visibleNodeId);
 				updateNodeIds.add(visibleNodeId);
+			}
+			else if(viewport) {
+				redrawNodeIds.add(visibleNodeId);
 			}
 		}
 
@@ -781,7 +933,9 @@ class RenderContext {
 		}
 
 		for(const nodeRef of translatedNodeRefs) {
-			redrawNodeIds.add(nodeRef.id);
+			const actualNodeRef = await this.objectNode(nodeRef);
+			this.invalidateNodeRender(actualNodeRef);
+			redrawNodeIds.add(actualNodeRef.id);
 		}
 
 		const redrawMegaTiles = new Set();
@@ -816,21 +970,97 @@ class RenderContext {
 
 		const drewToMegaTiles = new Set();
 
+		// Sort all layers by Z order.
 		const nodeLayers = Array.from(this.mapper.backend.layerRegistry.getLayers());
 		nodeLayers.sort((a, b) => a.getZ() - b.getZ());
 
-		for(const nodeLayer of nodeLayers) {
+		// A list of filters in order; nodes matching each filter will be rendered on the same Z level.
+		const filters = [];
+
+		// Add a filter for each layer in order.
+		for(const layer of nodeLayers) {
+			if(layer.id === "geographical") {
+				// If this is the geographical layer, render terrain objects before explicit objects.
+				filters.push(async nodeRef => (await nodeRef.getLayer()).id === layer.id &amp;&amp; (await nodeRef.getType()).getScale() === "terrain");
+				filters.push(async nodeRef => (await nodeRef.getLayer()).id === layer.id &amp;&amp; (await nodeRef.getType()).getScale() === "explicit");
+			}
+			else {
+				filters.push(async nodeRef => (await nodeRef.getLayer()).id === layer.id);
+			}
+		}
+
+		for(const filter of filters) {
 			const focusTiles = {};
 
-			const drawNodeIds = async (nodeIds) => {
-				const drawAgainIds = new Set();
+			const drawLayer = async (layer, drawAgainIds) => {
+				const nodeId = layer.nodeRender.nodeRef.id;
+
+				const absoluteLayerBox = Box3.fromOffset(layer.corner, new Vector3(layer.width, layer.height, 0));
+				const layerBoxInMegaTiles = absoluteLayerBox.map(v => v.divideScalar(megaTileSize).map(Math.floor));
+
+				for(let x = Math.max(layerBoxInMegaTiles.a.x, screenBoxInMegaTiles.a.x); x &lt;= Math.min(layerBoxInMegaTiles.b.x, screenBoxInMegaTiles.b.x); x++) {
+					let megaTileX = megaTiles[x];
+					if(megaTileX === undefined) {
+						megaTileX = megaTiles[x] = {};
+					}
+
+					for(let y = Math.max(layerBoxInMegaTiles.a.y, screenBoxInMegaTiles.a.y); y &lt;= Math.min(layerBoxInMegaTiles.b.y, screenBoxInMegaTiles.b.y); y++) {
+						const megaTilePoint = new Vector3(x, y, 0);
+
+						let megaTile = megaTileX[y];
+						if(megaTile === undefined) {
+							megaTile = megaTileX[y] = new MegaTile(this, this.zoom, megaTilePoint);
+							redrawMegaTiles.add(megaTile);
+						}
+
+						const firstAppearanceInMegaTile = !megaTile.nodeIds.has(nodeId);
+
+						if(redrawMegaTiles.has(megaTile) || firstAppearanceInMegaTile) {
+							const pointOnLayer = megaTilePoint.multiplyScalar(megaTileSize).subtract(absoluteLayerBox.a);
+							const realPointOnLayer = pointOnLayer.map(c => Math.max(c, 0));
+							const pointOnMegaTile = realPointOnLayer.subtract(pointOnLayer);
+
+							megaTile.context.drawImage(await layer.canvas(), realPointOnLayer.x, realPointOnLayer.y, megaTileSize, megaTileSize, pointOnMegaTile.x, pointOnMegaTile.y, megaTileSize, megaTileSize);
+
+							this.nodeIdsToMegatiles[nodeId].add(megaTile);
+							megaTile.nodeIds.add(nodeId);
+							megaTile.addParts(layer.parts);
+
+							drewToMegaTiles.add(megaTile);
+
+							if(!layer.zWait) {
+								let averagePartPoint = Vector3.ZERO;
+								for(const part of layer.parts) {
+									averagePartPoint = averagePartPoint.add(part.absolutePoint);
+								}
+
+								labelPositions[nodeId] = {
+									center: Vector3.max(Vector3.min(averagePartPoint.divideScalar(layer.parts.length), screenBox.b), screenBox.a),
+									size: Math.min(24, Math.ceil(this.unitsToPixels(await this.mapper.backend.getNodeRef(nodeId).getRadius()) / 4)),
+								};
+							}
+						}
+
+						if(firstAppearanceInMegaTile &amp;&amp; drawAgainIds) {
+							for(const otherNodeId of megaTile.nodeIds) {
+								drawAgainIds.add(otherNodeId);
+							}
+						}
+					}
+				}
+			};
+
+			const waitLayers = new Set();
+
+			const drawNodeIds = async (nodeIds, drawAgainIds) => {
 				const layers = [];
 
 				const focusTileLists = new Set();
 
 				for(const nodeId of nodeIds) {
 					const nodeRef = this.mapper.backend.getNodeRef(nodeId);
-					if((await nodeRef.getLayer()).id !== nodeLayer.id)
+					// Only render nodes in the current filter.
+					if(!await filter(nodeRef))
 						continue;
 
 					drawnNodeIds.add(nodeRef.id);
@@ -848,74 +1078,11 @@ class RenderContext {
 				layers.sort((a, b) => a.z - b.z);
 
 				for(const layer of layers) {
-					const nodeId = layer.nodeRender.nodeRef.id;
-					const nodeInSelection = this.selection.hasNodeId(nodeId) || this.hoverSelection.hasNodeId(nodeId);
-
-					const absoluteLayerBox = Box3.fromOffset(layer.corner, new Vector3(layer.width, layer.height, 0));
-					const layerBoxInMegaTiles = absoluteLayerBox.map(v => v.divideScalar(megaTileSize).map(Math.floor));
-
-					for(let x = Math.max(layerBoxInMegaTiles.a.x, screenBoxInMegaTiles.a.x); x &lt;= Math.min(layerBoxInMegaTiles.b.x, screenBoxInMegaTiles.b.x); x++) {
-						let megaTileX = megaTiles[x];
-						if(megaTileX === undefined) {
-							megaTileX = megaTiles[x] = {};
-						}
-
-						for(let y = Math.max(layerBoxInMegaTiles.a.y, screenBoxInMegaTiles.a.y); y &lt;= Math.min(layerBoxInMegaTiles.b.y, screenBoxInMegaTiles.b.y); y++) {
-							const megaTilePoint = new Vector3(x, y, 0);
-
-							let megaTile = megaTileX[y];
-							if(megaTile === undefined) {
-								megaTile = megaTileX[y] = new MegaTile(this, this.zoom, megaTilePoint);
-								redrawMegaTiles.add(megaTile);
-							}
-
-							const firstAppearanceInMegaTile = !megaTile.nodeIds.has(nodeId);
-
-							if(redrawMegaTiles.has(megaTile) || firstAppearanceInMegaTile) {
-								const pointOnLayer = megaTilePoint.multiplyScalar(megaTileSize).subtract(absoluteLayerBox.a);
-								const realPointOnLayer = pointOnLayer.map(c => Math.max(c, 0));
-								const pointOnMegaTile = realPointOnLayer.subtract(pointOnLayer);
-
-								const layerImage = await layer.canvas();
-								let toRenderCanvas = layerImage;
-
-								if(nodeInSelection) {
-									toRenderCanvas = document.createElement("canvas");
-									toRenderCanvas.width = layerImage.width;
-									toRenderCanvas.height = layerImage.height;
-
-									const c = toRenderCanvas.getContext("2d");
-									c.drawImage(layerImage, 0, 0);
-									c.globalCompositeOperation = "source-atop";
-									c.fillStyle = "black";
-									c.globalAlpha = 0.1;
-									c.fillRect(0, 0, toRenderCanvas.width, toRenderCanvas.height);
-								}
-								megaTile.context.drawImage(toRenderCanvas, realPointOnLayer.x, realPointOnLayer.y, megaTileSize, megaTileSize, pointOnMegaTile.x, pointOnMegaTile.y, megaTileSize, megaTileSize);
-
-								this.nodeIdsToMegatiles[nodeId].add(megaTile);
-								megaTile.nodeIds.add(nodeId);
-								megaTile.addParts(layer.parts);
-
-								drewToMegaTiles.add(megaTile);
-
-								let averagePartPoint = Vector3.ZERO;
-								for(const part of layer.parts) {
-									averagePartPoint = averagePartPoint.add(part.absolutePoint);
-								}
-
-								labelPositions[nodeId] = {
-									center: Vector3.max(Vector3.min(averagePartPoint.divideScalar(layer.parts.length), screenBox.b), screenBox.a),
-									size: Math.min(24, Math.ceil(this.unitsToPixels(await this.mapper.backend.getNodeRef(nodeId).getRadius()) / 4)),
-								};
-							}
-
-							if(firstAppearanceInMegaTile) {
-								for(const otherNodeId of megaTile.nodeIds) {
-									drawAgainIds.add(otherNodeId);
-								}
-							}
-						}
+					if(layer.zWait) {
+						waitLayers.add(layer);
+					}
+					else {
+						await drawLayer(layer, drawAgainIds);
 					}
 				}
 
@@ -931,11 +1098,10 @@ class RenderContext {
 						}
 					}
 				}
-
-				return drawAgainIds;
 			};
 
-			const secondPassNodeIds = await drawNodeIds(updateNodeIds);
+			const secondPassNodeIds = new Set();
+			await drawNodeIds(updateNodeIds, secondPassNodeIds);
 			await drawNodeIds(secondPassNodeIds);
 
 			for(let tX in focusTiles) {
@@ -953,6 +1119,7 @@ class RenderContext {
 								if(drewToMegaTiles.has(megaTile)) {
 									const tile = focusTilesX[tY];
 									const center = tile.centerPoint;
+
 									const drawPoint = center.subtract(megaTile.corner);
 
 									const neighbors = [];
@@ -971,9 +1138,9 @@ class RenderContext {
 										}
 									}
 
-									for(const neighbor of neighbors) {
-										const c = megaTile.context;
+									const c = megaTile.context;
 
+									for(const neighbor of neighbors) {
 										c.fillStyle = neighbor.part.fillStyle;
 										c.globalAlpha = 0.5;
 
@@ -984,27 +1151,18 @@ class RenderContext {
 										c.beginPath();
 										c.arc(arcPoint.x, arcPoint.y, tileSize / 2, angle - Math.PI / 2, angle + Math.PI / 2, false);
 										c.fill();
-
-										const nodeInSelection = this.selection.hasNodeRef(neighbor.nodeRef) || this.hoverSelection.hasNodeRef(neighbor.nodeRef);
-										if(nodeInSelection) {
-											c.globalAlpha = 0.05;
-											c.fillStyle = "black";
-
-											c.beginPath();
-											c.arc(arcPoint.x, arcPoint.y, tileSize / 2, angle - Math.PI / 2, angle + Math.PI / 2, false);
-											c.fill();
-										}
-
-										//const p = tile.absolutePoint.subtract(megaTile.corner);
-										//c.strokeRect(p.x, p.y, tileSize, tileSize);
-
-										c.globalAlpha = 1;
 									}
+
+									c.globalAlpha = 1;
 								}
 							}
 						}
 					}
 				}
+			}
+
+			for(const layer of waitLayers) {
+				drawLayer(layer);
 			}
 		}
 
@@ -1275,6 +1433,11 @@ class RenderContext {
 				}
 			}
 		}
+
+		c.globalAlpha = 0.25;
+		const offset = this.selectionCanvasScroll.subtract(this.scrollOffset);
+		c.drawImage(this.selectionCanvas, offset.x, offset.y);
+		c.globalAlpha = 1;
 	}
 
 	async drawLabels() {
@@ -1307,6 +1470,59 @@ class RenderContext {
 		}
 	}
 
+	async drawZoom() {
+		const timeoutFraction = Math.max(0, this.msSinceLastZoomRequest() / this.zoomRequestTimeout);
+
+		const pixelToMeters = this.mapper.unitsToMeters(this.zoomFactor(this.requestedZoom));
+
+		const lines = [
+			`Zoom ${this.requestedZoom} / ${this.maxZoom}`,
+			`1px = ${pixelToMeters.toFixed(2)}m`,
+			`Brush diameter ${(pixelToMeters * this.brush.getRadius()).toFixed(2)}m`,
+			"Click to apply",
+		];
+
+		const c = this.canvas.getContext("2d");
+
+		let width = 0;
+		let height = 0;
+
+		for(const text of lines) {
+			const measure = c.measureText(text);
+			height = Math.max(height, Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent));
+			width = Math.max(width, measure.width);
+		}
+
+		const totalHeight = height * lines.length;
+
+		const screenCenter = this.screenSize().divideScalar(2).round();
+
+		const radius = Math.ceil(Math.max(width, totalHeight) / 2);
+
+		const where = new Vector3(screenCenter.x - width / 2, screenCenter.y - totalHeight / 2, 0);
+
+		c.fillStyle = "black";
+		c.globalAlpha = 0.5;
+		c.beginPath();
+		c.arc(screenCenter.x, screenCenter.y, radius * Math.sqrt(2), 0, 2 * Math.PI, false);
+		c.fill();
+		c.globalAlpha = 1;
+
+		c.lineWidth = 2;
+		c.strokeStyle = "white";
+		c.beginPath();
+		c.arc(screenCenter.x, screenCenter.y, radius * Math.sqrt(2) + 2, 0, (1 - timeoutFraction) * 2 * Math.PI, false);
+		c.stroke();
+
+		for(let i = 0; i &lt; lines.length; i++) {
+			const text = lines[i];
+			c.fillStyle = "white";
+			c.textBaseline = "top";
+			c.font = "16px mono";
+			c.fillText(text, where.x, where.y + height * i);
+		}
+	}
+
 	/** Completely redraw the displayed UI. */
 	async redraw() {
 		await this.clearCanvas();
@@ -1318,6 +1534,11 @@ class RenderContext {
 			await this.drawPegs();
 		}
 		await this.drawBrush();
+
+		if(this.msSinceLastZoomRequest() &lt; this.zoomRequestTimeout) {
+			await this.drawZoom();
+			this.requestRedraw();
+		}
 
 		await this.drawHelp();
 		await this.drawScale();
@@ -1353,6 +1574,28 @@ class RenderContext {
 		if(drawnNodeIds !== undefined) {
 			for(const nodeId of drawnNodeIds) {
 				yield this.mapper.backend.getNodeRef(nodeId);
+			}
+		}
+	}
+
+	async * allDrawnNodes() {
+		yield* this.drawnNodes();
+
+		const megaTiles = this.megaTiles[this.zoom];
+		if(megaTiles !== undefined) {
+			const screenBoxInMegaTiles = this.absoluteScreenBox().map(v => v.divideScalar(megaTileSize).map(Math.floor));
+			for(let x = screenBoxInMegaTiles.a.x; x &lt;= screenBoxInMegaTiles.b.x; x++) {
+				const megaTileX = megaTiles[x];
+				if(megaTileX !== undefined) {
+					for(let y = screenBoxInMegaTiles.a.y; y &lt;= screenBoxInMegaTiles.b.y; y++) {
+						const megaTile = megaTileX[y];
+						if(megaTile !== undefined) {
+							for(const part of megaTile.parts) {
+								yield part.nodeRef;
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -1547,7 +1790,7 @@ export { Mapper };
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Thu Dec 29 2022 01:07:46 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Tue Jan 03 2023 16:55:14 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>
