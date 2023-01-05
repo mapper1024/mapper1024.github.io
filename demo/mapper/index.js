@@ -544,6 +544,7 @@ class EntityRef {
 		return this.backend.removeEntity(this.id);
 	}
 
+	/** Restore this entity to the database if it was previously removed. */
 	async unremove() {
 		return this.backend.unremoveEntity(this.id);
 	}
@@ -611,10 +612,16 @@ class NodeRef extends EntityRef {
 		yield* children;
 	}
 
+	/** Check if this node has any children.
+	 * @returns {boolean} does this node have children?
+	 */
 	async hasChildren() {
 		return await this.backend.nodeHasChildren(this.id);
 	}
 
+	/** Iterate through all children, grandchildren, and so forth of this node, recursively.
+	 * @returns {AsyncIterable.<NodeRef>}
+	 */
 	async * getAllDescendants() {
 		for (const child of await asyncFrom(this.getChildren())) {
 			yield child;
@@ -622,6 +629,9 @@ class NodeRef extends EntityRef {
 		}
 	}
 
+	/** Iterate through all children, grandchildren, and so forth of this node, recursively. Includes this node itself.
+	 * @returns {AsyncIterable.<NodeRef>}
+	 */
 	async * getSelfAndAllDescendants() {
 		yield this;
 		for (const child of await asyncFrom(this.getChildren())) {
@@ -629,6 +639,9 @@ class NodeRef extends EntityRef {
 		}
 	}
 
+	/** Get all neighbors of this node --- those nodes connected by edges to this node.
+	 * @returns {AsyncIterable.<NodeRef>}
+	 */
 	async * getNeighbors() {
 		let neighbors = this.cache.neighbors;
 
@@ -639,6 +652,9 @@ class NodeRef extends EntityRef {
 		yield* neighbors;
 	}
 
+	/** Get all neighbors of this node --- those nodes connected by edges to this node. Includes this node.
+	 * @returns {AsyncIterable.<NodeRef>}
+	 */
 	async * getSelfAndNeighbors() {
 		yield this;
 		yield* this.getNeighbors();
@@ -658,35 +674,56 @@ class NodeRef extends EntityRef {
 		return this.getPVector3("center");
 	}
 
+	/** Set the effective center property of this node --- where it is actually displayed.
+	 * @param v {Vector3}
+	 */
 	async setEffectiveCenter(v) {
 		return this.setPVector3("eCenter", v);
 	}
 
+	/** Get the effective center property of this node --- where it is actually displayed.
+	 * @returns {Vector3}
+	 */
 	async getEffectiveCenter() {
 		return this.getPVector3("eCenter");
 	}
 
+	/** Set the type of this node.
+	 * @param type {NodeType}
+	 */
 	async setType(type) {
 		return this.setPString("type", type.id);
 	}
 
+	/** Get the type of this node from the map backend node type registry.
+	 * @returns {NodeType}
+	 */
 	async getType() {
 		return this.backend.nodeTypeRegistry.get(await this.getPString("type"));
 	}
 
+	/** Set the radius of the node. */
 	async setRadius(radius) {
 		return this.setPNumber("radius", radius);
 	}
 
+	/** Get the radius of the node */
 	async getRadius() {
 		return this.getPNumber("radius");
 	}
 
+	/** Get the layer of this node from the map backend layer registry.
+	 * Returns the default layer if no layer is specified.
+	 * @returns {Layer}
+	 */
 	async getLayer() {
 		const layerId = await this.getPString("layer");
 		return layerId ? this.backend.layerRegistry.get(layerId) : this.backend.layerRegistry.getDefault();
 	}
 
+	/** Set the layer of this node.
+	 * @param layer {Layer}
+	 */
 	async setLayer(layer) {
 		return this.setPString("layer", layer.id);
 	}
@@ -702,7 +739,6 @@ class NodeRef extends EntityRef {
 		yield* edges;
 	}
 
-	/** Remove this entity from the database. */
 	async remove() {
 		await this.clearParentCache();
 		await this.clearNeighborCache();
@@ -1781,57 +1817,91 @@ class SqlJsMapBackend extends MapBackend {
 	}
 }
 
+/** A Brush represents a tool used to manipulate the map,
+ * such as a brush to draw terrain or a brush to select terrain.
+ *
+ * Brush types inheirit from this class and (re-)implement its methods.
+ */
 class Brush {
 	constructor(context) {
 		this.context = context;
 
+		// The current "size" of the brush, in arbitrary units.
 		this.size = 1;
+
+		// The maximum "size" of the brush, in arbitrary units.
 		this.maxSize = 20;
+
+		// A change in the brush's size will be considered recent if it happened less than this many ms ago.
+		this.sizeChangeRecentTimeout = 1000;
 	}
 
+	/** Modify the given button's text, title, etc. to represent the brush.
+	 * @param button {Element} the HTML button to modify
+	 */
 	displayButton(button) {
 		button.innerText = this.constructor.name;
 	}
 
+	/** Modify the given brushbar to display options, information, or other controls for this brush.
+	 * @param brushBar the {BrushBar} being used
+	 * @param container the actual HTML {Element} to add elements to; will typically be displayed within the brushbar
+	 */
 	displaySidebar(brushBar, container) {
 	}
 
+	/** Called when the brush is switched to from another brush. */
 	switchTo() {
 		this.lastSizeChange = performance.now();
 	}
 
+	/** Get a human-readable description of the brush, indicating what options are being used.
+	 */
 	getDescription() {
 		throw "description not implemented";
 	}
 
+	/** Get the radius, in pixels, of the brush as currently displayed. */
 	getRadius() {
 		return this.size * 15;
 	}
 
+	/** Get the radius, in meters, of the brush as currently displayed. */
 	sizeInMeters() {
 		return this.context.mapper.unitsToMeters(this.context.pixelsToUnits(this.getRadius()));
 	}
 
+	/** Called when the user tries to "increment" the brush; may scroll through brush options, etc. */
 	increment() {}
 
+	/** Called when the user tries to "decrement" the brush; may scroll through brush options, etc. */
 	decrement() {}
 
+	/** Called when the user tries to shrink the size of the brush. */
 	shrink() {
 		this.size = Math.max(1, this.size - 1);
 		this.lastSizeChange = performance.now();
 		this.context.hooks.call("brush_size_change", this);
 	}
 
+	/** Called when the user tries to enlarge the size of the brush. */
 	enlarge() {
 		this.size = Math.min(this.maxSize, this.size + 1);
 		this.lastSizeChange = performance.now();
 		this.context.hooks.call("brush_size_change", this);
 	}
 
+	/** Has the size of the brush been recently changed?
+	 * @returns {boolean}
+	 */
 	sizeRecentlyChanged() {
-		return performance.now() - this.lastSizeChange < 1000;
+		return performance.now() - this.lastSizeChange < this.sizeChangeRecentTimeout;
 	}
 
+	/** Draw the brush as a circle with generic information on a canvas.
+	 * @param context {CanvasRenderingContext2D} the canvas context to draw on
+	 * @param position {Vector3} the center of where the brush should be drawn
+	 */
 	async drawAsCircle(context, position) {
 		context.setLineDash([]);
 
@@ -1857,16 +1927,30 @@ class Brush {
 		context.fillText(positionText, position.x - Math.min(this.getRadius(), context.measureText(positionText).width / 2), position.y + this.getRadius() + 6);
 	}
 
+	/** Draw the brush on a canvas at a given position.
+	 * @param context {CanvasRenderingContext2D} the canvas context to draw on
+	 * @param position {Vector3} the center of where the brush should be drawn
+	 */
 	async draw(context, position) {
+		// Default implementation just draws a generic information brush as a circle.
 		await this.drawAsCircle(context, position);
 	}
 
+	/** Called when the brush is triggered during a mouse drag event.
+	 * Mouse drag events may trigger the brush every time the mouse moves across the screen while bring held down.
+	 * @param where {Vector3} where on the screen the brush is at this point
+	 * @param mouseDragEvent {DragEvent} the ongoing mouse drag event
+	 */
 	async trigger(where, mouseDragEvent) {
 	}
 
+	/** Called when the brush is first activated (by a click).
+	 * @param where {Vector3} where on the screen the brush was activated
+	 */
 	async activate(where) {
 	}
 
+	/** Called when the brush's context's current layer changes. */
 	signalLayerChange(layer) {
 	}
 }
@@ -1930,15 +2014,18 @@ class BulkAction extends Action {
 	async perform() {
 		const actions = [];
 
+		// Perform every action specified in the options, saving their undo actions.
 		for(const action of this.options.actions) {
 			actions.push(await this.context.performAction(action, false));
 		}
 
+		// The undo action for the entire bulk action is just another bulk action of the saved undo actions.
 		return new BulkAction(this.context, {
 			actions: actions.reverse(),
 		});
 	}
 
+	// A bulk action is empty if all of its sub actions are also empty.
 	empty() {
 		for(const action of this.options.actions) {
 			if(!action.empty()) {
@@ -1998,11 +2085,20 @@ class DrawEvent extends DragEvent {
 	}
 }
 
+/** An action to change the name (label) of a node.
+ * Options:
+ * - name: The new name (label) for the node
+ * - nodeRef: The {NodeRef} to change the name of.
+ */
 class ChangeNameAction extends Action {
 	async perform() {
+		// Preserve the old name for undo.
 		const oldName = (await this.options.nodeRef.getPString("name")) || "";
+
 		await this.options.nodeRef.setPString("name", this.options.name);
 		await this.context.mapper.hooks.call("updateNode", this.options.nodeRef);
+
+		// Undo is just changing back to the old name.
 		return new ChangeNameAction(this.context, {nodeRef: this.options.nodeRef, name: oldName});
 	}
 
@@ -2011,21 +2107,36 @@ class ChangeNameAction extends Action {
 	}
 }
 
+/** Cleans up an object node by removing the most point children possible while still retaining the overall shape.
+ * Options:
+ * - nodeRef: The object {NodeRef} to be cleaned up.
+ */
 class NodeCleanupAction extends Action {
 	async perform() {
+		// Node ids to be removed.
 		const toRemove = new Set();
+
+		// Pairs of nodeRefs to merge together.
 		const mergePairs = [];
+
+		// Get all vertices within the object node.
 		const vertices = await asyncFrom(this.getAllPointVertices());
 
+		// Running total of vertex positions.
 		let sum = Vector3.ZERO;
+		// Count of vertices used.
 		let count = 0;
 
 		for(const vertex of vertices) {
+			// If we haven't already decided to remove this vertex, count it into the running total of positions.
 			if(!toRemove.has(vertex.nodeRef.id)) {
 				++count;
 				sum = sum.add(vertex.point);
+
+				// For every other vertex, check if its close enough to be merged into this one.
 				for(const otherVertex of vertices) {
 					if(otherVertex.nodeRef.id !== vertex.nodeRef.id && otherVertex.point.subtract(vertex.point).length() < (vertex.radius + otherVertex.radius) / 4) {
+						// If it was close enough, record it to be merged.
 						toRemove.add(otherVertex.nodeRef.id);
 						mergePairs.push([vertex.nodeRef, otherVertex.nodeRef]);
 					}
@@ -2033,12 +2144,13 @@ class NodeCleanupAction extends Action {
 			}
 		}
 
+		// Get average position of remaining vertices.
 		let center = Vector3.ZERO;
-
 		if(count > 0) {
 			center = sum.divideScalar(count);
 		}
 
+		// Get the furthest vertex point away from the center.
 		let furthest = center;
 		for(const vertex of vertices) {
 			if(!toRemove.has(vertex.nodeRef.id)) {
@@ -2048,32 +2160,52 @@ class NodeCleanupAction extends Action {
 			}
 		}
 
+		// List of all new edges created by the cleanup.
 		const newEdges = [];
 
+		// Merge pairs of vertices together.
+		// The target/first vertex remains, and all edges pointing to the second vertex are recreated to point to the target vertex.
 		for(const mergePair of mergePairs) {
 			const target = mergePair[0];
 			for(const neighbor of await(asyncFrom(mergePair[1].getNeighbors()))) {
 				if(target.id !== neighbor.id && !(await this.context.mapper.backend.getEdgeBetween(target.id, neighbor.id))) {
+					// Create the edge and record it.
 					const edgeRef = await this.context.mapper.backend.createEdge(target.id, neighbor.id);
 					newEdges.push(edgeRef);
 				}
 			}
 		}
 
+		// Perform the necessary actions and record their undo actions.
 		const undoNodeAction = await this.context.performAction(new BulkAction(this.context, {actions: [
+			// Remove all the extraneous point/vertex nodes.
 			new RemoveAction(this.context, {nodeRefs: [...toRemove].map((id) => this.context.mapper.backend.getNodeRef(id))}),
+			// Change the node space of the object node to match its new vertex set.
 			new SetNodeSpaceAction(this.context, {nodeRef: this.options.nodeRef, center: center, effectiveCenter: center, radius: furthest.subtract(center).length()}),
 		]}), false);
 
+		// Return the undo action, which undoes removing vertices, changing the node space, and adding edges.
 		return new BulkAction(this.context, {actions: [undoNodeAction, new RemoveEdgeAction(this.context, {edgeRefs: newEdges})]});
 	}
 
+	/**
+	 * Get all child nodes of the object node.
+	 * @returns {AsyncIterable.<NodeRef>}
+	 */
 	async * getAllNodes() {
 		for await (const nodeRef of this.options.nodeRef.getAllDescendants()) {
 			yield nodeRef;
 		}
 	}
 
+	/**
+	 * Get descriptors for every vertex/point child node in the object node.
+	 * A point descriptor has the fields:
+	 * - nodeRef: the point node {NodeRef}
+	 * - radius: the {number} radius on the map
+	 * - point: the {Vector3} center of the node on the map
+	 * @returns {AsyncIterable.<Object>} an iterable of point descriptors
+	 */
 	async * getAllPointVertices() {
 		for await (const nodeRef of this.getAllNodes()) {
 			if(await nodeRef.getNodeType() === "point") {
@@ -2131,8 +2263,17 @@ class RemoveEdgeAction extends Action {
 	}
 }
 
+/**
+ * Set a node's space (center & radius) on the map.
+ * Options:
+ * - nodeRef: the {NodeRef} referring to the node to modify
+ * - center: the new center {Vector3}
+ * - effectiveCenter: the new effective center {Vector3}
+ * - radius: the new radius {Vector3}
+ */
 class SetNodeSpaceAction extends Action {
 	async perform() {
+		// The undo action just reverts back to the previous values.
 		const undoAction = new SetNodeSpaceAction(this.context, {
 			nodeRef: this.options.nodeRef,
 			center: await this.options.nodeRef.getCenter(),
@@ -2150,9 +2291,17 @@ class SetNodeSpaceAction extends Action {
 	}
 }
 
+/**
+ * Move a node on the map by a specified offset.
+ * Options:
+ * - nodeRef: the {NodeRef} to move
+ * - offset: the {Vector3} offset to add to the node's current position on the map.
+ */
 class TranslateAction extends Action {
 	async perform() {
 		await this.context.mapper.translateNode(this.options.nodeRef, this.options.offset);
+
+		// The undo action is just translating by the negated offset.
 		return new TranslateAction(this.context, {
 			nodeRef: this.options.nodeRef,
 			offset: this.options.offset.multiplyScalar(-1),
@@ -3818,7 +3967,7 @@ function style() {
 }
 
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.4.0";
+let version = "0.4.1";
 
 /** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
