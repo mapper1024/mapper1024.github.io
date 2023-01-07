@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: actions/node_cleanup_action.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: actions/node_cleanup_action.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { Action, SetNodeSpaceAction, BulkAction, RemoveAction, RemoveEdgeAction } from "./index.js";
+import { asyncFrom } from "../utils.js";
+import { Vector3 } from "../geometry.js";
+
+/** Cleans up an object node by removing the most point children possible while still retaining the overall shape.
+ * Options:
+ * - nodeRef: The object {NodeRef} to be cleaned up.
+ */
+class NodeCleanupAction extends Action {
+	async perform() {
+		// Node ids to be removed.
+		const toRemove = new Set();
+
+		// Pairs of nodeRefs to merge together.
+		const mergePairs = [];
+
+		// Get all vertices within the object node.
+		const vertices = await asyncFrom(this.getAllPointVertices());
+
+		// Running total of vertex positions.
+		let sum = Vector3.ZERO;
+		// Count of vertices used.
+		let count = 0;
+
+		for(const vertex of vertices) {
+			// If we haven't already decided to remove this vertex, count it into the running total of positions.
+			if(!toRemove.has(vertex.nodeRef.id)) {
+				++count;
+				sum = sum.add(vertex.point);
+
+				// For every other vertex, check if its close enough to be merged into this one.
+				for(const otherVertex of vertices) {
+					if(otherVertex.nodeRef.id !== vertex.nodeRef.id &amp;&amp; otherVertex.point.subtract(vertex.point).length() &lt; (vertex.radius + otherVertex.radius) / 4) {
+						// If it was close enough, record it to be merged.
+						toRemove.add(otherVertex.nodeRef.id);
+						mergePairs.push([vertex.nodeRef, otherVertex.nodeRef]);
+					}
+				}
+			}
+		}
+
+		// Get average position of remaining vertices.
+		let center = Vector3.ZERO;
+		if(count > 0) {
+			center = sum.divideScalar(count);
+		}
+
+		// Get the furthest vertex point away from the center.
+		let furthest = center;
+		for(const vertex of vertices) {
+			if(!toRemove.has(vertex.nodeRef.id)) {
+				if(vertex.point.subtract(center).lengthSquared() >= furthest.subtract(center).lengthSquared()) {
+					furthest = vertex.point;
+				}
+			}
+		}
+
+		// List of all new edges created by the cleanup.
+		const newEdges = [];
+
+		// Merge pairs of vertices together.
+		// The target/first vertex remains, and all edges pointing to the second vertex are recreated to point to the target vertex.
+		for(const mergePair of mergePairs) {
+			const target = mergePair[0];
+			for(const neighbor of await(asyncFrom(mergePair[1].getNeighbors()))) {
+				if(target.id !== neighbor.id &amp;&amp; !(await this.context.mapper.backend.getEdgeBetween(target.id, neighbor.id))) {
+					// Create the edge and record it.
+					const edgeRef = await this.context.mapper.backend.createEdge(target.id, neighbor.id);
+					newEdges.push(edgeRef);
+				}
+			}
+		}
+
+		// Perform the necessary actions and record their undo actions.
+		const undoNodeAction = await this.context.performAction(new BulkAction(this.context, {actions: [
+			// Remove all the extraneous point/vertex nodes.
+			new RemoveAction(this.context, {nodeRefs: [...toRemove].map((id) => this.context.mapper.backend.getNodeRef(id))}),
+			// Change the node space of the object node to match its new vertex set.
+			new SetNodeSpaceAction(this.context, {nodeRef: this.options.nodeRef, center: center, effectiveCenter: center, radius: furthest.subtract(center).length()}),
+		]}), false);
+
+		// Return the undo action, which undoes removing vertices, changing the node space, and adding edges.
+		return new BulkAction(this.context, {actions: [undoNodeAction, new RemoveEdgeAction(this.context, {edgeRefs: newEdges})]});
+	}
+
+	/**
+	 * Get all child nodes of the object node.
+	 * @returns {AsyncIterable.&lt;NodeRef>}
+	 */
+	async * getAllNodes() {
+		for await (const nodeRef of this.options.nodeRef.getAllDescendants()) {
+			yield nodeRef;
+		}
+	}
+
+	/**
+	 * Get descriptors for every vertex/point child node in the object node.
+	 * A point descriptor has the fields:
+	 * - nodeRef: the point node {NodeRef}
+	 * - radius: the {number} radius on the map
+	 * - point: the {Vector3} center of the node on the map
+	 * @returns {AsyncIterable.&lt;Object>} an iterable of point descriptors
+	 */
+	async * getAllPointVertices() {
+		for await (const nodeRef of this.getAllNodes()) {
+			if(await nodeRef.getNodeType() === "point") {
+				yield {
+					nodeRef: nodeRef,
+					radius: await nodeRef.getRadius(),
+					point: await nodeRef.getCenter(),
+				};
+			}
+		}
+	}
+}
+
+export { NodeCleanupAction };
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Action.html">Action</a></li><li><a href="Box3.html">Box3</a></li><li><a href="Brush.html">Brush</a></li><li><a href="BulkAction.html">BulkAction</a></li><li><a href="ChangeNameAction.html">ChangeNameAction</a></li><li><a href="DirEdgeRef.html">DirEdgeRef</a></li><li><a href="EdgeRef.html">EdgeRef</a></li><li><a href="EntityRef.html">EntityRef</a></li><li><a href="HookContainer.html">HookContainer</a></li><li><a href="Line3.html">Line3</a></li><li><a href="MapBackend.html">MapBackend</a></li><li><a href="Mapper.html">Mapper</a></li><li><a href="NodeCleanupAction.html">NodeCleanupAction</a></li><li><a href="NodeRef.html">NodeRef</a></li><li><a href="Path.html">Path</a></li><li><a href="RenderContext.html">RenderContext</a></li><li><a href="SetNodeSpaceAction.html">SetNodeSpaceAction</a></li><li><a href="SqlJsMapBackend.html">SqlJsMapBackend</a></li><li><a href="TranslateAction.html">TranslateAction</a></li><li><a href="Vector3.html">Vector3</a></li></ul><h3>Global</h3><ul><li><a href="global.html#asyncFrom">asyncFrom</a></li><li><a href="global.html#merge">merge</a></li><li><a href="global.html#mod">mod</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Thu Jan 05 2023 01:02:08 GMT+0000 (Coordinated Universal Time)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

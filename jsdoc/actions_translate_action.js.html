@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Class: BulkAction</title>
+    <title>JSDoc: Source: actions/translate_action.js</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,139 +17,43 @@
 
 <div id="main">
 
-    <h1 class="page-title">Class: BulkAction</h1>
+    <h1 class="page-title">Source: actions/translate_action.js</h1>
 
     
 
 
 
-
-<section>
-
-<header>
     
-        <h2><span class="attribs"><span class="type-signature"></span></span>BulkAction<span class="signature">()</span><span class="type-signature"></span></h2>
-        
-            <div class="class-description">An action composed of several actions. Will handle creating the needed bulk action to undo the actions in order.
-Options:
-- actions: An array of actions to perform.</div>
-        
-    
-</header>
-
-<article>
-    <div class="container-overview">
-    
-        
-
-    
-    <h2>Constructor</h2>
-    
-
-    
-    <h4 class="name" id="BulkAction"><span class="type-signature"></span>new BulkAction<span class="signature">()</span><span class="type-signature"></span></h4>
-    
-
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<dl class="details">
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-    <dt class="tag-source">Source:</dt>
-    <dd class="tag-source"><ul class="dummy"><li>
-        <a href="actions_bulk_action.js.html">actions/bulk_action.js</a>, <a href="actions_bulk_action.js.html#line7">line 7</a>
-    </li></ul></dd>
-    
-
-    
-
-    
-
-    
-</dl>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
-    </div>
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-
-    
-</article>
-
-</section>
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { Action } from "./action.js";
+
+/**
+ * Move a node on the map by a specified offset.
+ * Options:
+ * - nodeRef: the {NodeRef} to move
+ * - offset: the {Vector3} offset to add to the node's current position on the map.
+ */
+class TranslateAction extends Action {
+	async perform() {
+		await this.context.mapper.translateNode(this.options.nodeRef, this.options.offset);
+
+		// The undo action is just translating by the negated offset.
+		return new TranslateAction(this.context, {
+			nodeRef: this.options.nodeRef,
+			offset: this.options.offset.multiplyScalar(-1),
+		});
+	}
+
+	empty() {
+		return false;
+	}
+}
+
+export { TranslateAction };
+</code></pre>
+        </article>
+    </section>
 
 
 

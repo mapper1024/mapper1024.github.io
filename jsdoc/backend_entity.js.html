@@ -103,6 +103,7 @@ class EntityRef {
 		return this.backend.removeEntity(this.id);
 	}
 
+	/** Restore this entity to the database if it was previously removed. */
 	async unremove() {
 		return this.backend.unremoveEntity(this.id);
 	}
@@ -170,10 +171,16 @@ class NodeRef extends EntityRef {
 		yield* children;
 	}
 
+	/** Check if this node has any children.
+	 * @returns {boolean} does this node have children?
+	 */
 	async hasChildren() {
 		return await this.backend.nodeHasChildren(this.id);
 	}
 
+	/** Iterate through all children, grandchildren, and so forth of this node, recursively.
+	 * @returns {AsyncIterable.&lt;NodeRef>}
+	 */
 	async * getAllDescendants() {
 		for (const child of await asyncFrom(this.getChildren())) {
 			yield child;
@@ -181,6 +188,9 @@ class NodeRef extends EntityRef {
 		}
 	}
 
+	/** Iterate through all children, grandchildren, and so forth of this node, recursively. Includes this node itself.
+	 * @returns {AsyncIterable.&lt;NodeRef>}
+	 */
 	async * getSelfAndAllDescendants() {
 		yield this;
 		for (const child of await asyncFrom(this.getChildren())) {
@@ -188,6 +198,9 @@ class NodeRef extends EntityRef {
 		}
 	}
 
+	/** Get all neighbors of this node --- those nodes connected by edges to this node.
+	 * @returns {AsyncIterable.&lt;NodeRef>}
+	 */
 	async * getNeighbors() {
 		let neighbors = this.cache.neighbors;
 
@@ -198,6 +211,9 @@ class NodeRef extends EntityRef {
 		yield* neighbors;
 	}
 
+	/** Get all neighbors of this node --- those nodes connected by edges to this node. Includes this node.
+	 * @returns {AsyncIterable.&lt;NodeRef>}
+	 */
 	async * getSelfAndNeighbors() {
 		yield this;
 		yield* this.getNeighbors();
@@ -217,35 +233,56 @@ class NodeRef extends EntityRef {
 		return this.getPVector3("center");
 	}
 
+	/** Set the effective center property of this node --- where it is actually displayed.
+	 * @param v {Vector3}
+	 */
 	async setEffectiveCenter(v) {
 		return this.setPVector3("eCenter", v);
 	}
 
+	/** Get the effective center property of this node --- where it is actually displayed.
+	 * @returns {Vector3}
+	 */
 	async getEffectiveCenter() {
 		return this.getPVector3("eCenter");
 	}
 
+	/** Set the type of this node.
+	 * @param type {NodeType}
+	 */
 	async setType(type) {
 		return this.setPString("type", type.id);
 	}
 
+	/** Get the type of this node from the map backend node type registry.
+	 * @returns {NodeType}
+	 */
 	async getType() {
 		return this.backend.nodeTypeRegistry.get(await this.getPString("type"));
 	}
 
+	/** Set the radius of the node. */
 	async setRadius(radius) {
 		return this.setPNumber("radius", radius);
 	}
 
+	/** Get the radius of the node */
 	async getRadius() {
 		return this.getPNumber("radius");
 	}
 
+	/** Get the layer of this node from the map backend layer registry.
+	 * Returns the default layer if no layer is specified.
+	 * @returns {Layer}
+	 */
 	async getLayer() {
 		const layerId = await this.getPString("layer");
 		return layerId ? this.backend.layerRegistry.get(layerId) : this.backend.layerRegistry.getDefault();
 	}
 
+	/** Set the layer of this node.
+	 * @param layer {Layer}
+	 */
 	async setLayer(layer) {
 		return this.setPString("layer", layer.id);
 	}
@@ -261,7 +298,6 @@ class NodeRef extends EntityRef {
 		yield* edges;
 	}
 
-	/** Remove this entity from the database. */
 	async remove() {
 		await this.clearParentCache();
 		await this.clearNeighborCache();
@@ -369,13 +405,13 @@ export { EntityRef, NodeRef, EdgeRef, DirEdgeRef };
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Action.html">Action</a></li><li><a href="Box3.html">Box3</a></li><li><a href="BulkAction.html">BulkAction</a></li><li><a href="DirEdgeRef.html">DirEdgeRef</a></li><li><a href="EdgeRef.html">EdgeRef</a></li><li><a href="EntityRef.html">EntityRef</a></li><li><a href="HookContainer.html">HookContainer</a></li><li><a href="Line3.html">Line3</a></li><li><a href="MapBackend.html">MapBackend</a></li><li><a href="Mapper.html">Mapper</a></li><li><a href="NodeRef.html">NodeRef</a></li><li><a href="Path.html">Path</a></li><li><a href="RenderContext.html">RenderContext</a></li><li><a href="SqlJsMapBackend.html">SqlJsMapBackend</a></li><li><a href="Vector3.html">Vector3</a></li></ul><h3>Global</h3><ul><li><a href="global.html#asyncFrom">asyncFrom</a></li><li><a href="global.html#merge">merge</a></li><li><a href="global.html#mod">mod</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="Action.html">Action</a></li><li><a href="Box3.html">Box3</a></li><li><a href="Brush.html">Brush</a></li><li><a href="BulkAction.html">BulkAction</a></li><li><a href="ChangeNameAction.html">ChangeNameAction</a></li><li><a href="DirEdgeRef.html">DirEdgeRef</a></li><li><a href="EdgeRef.html">EdgeRef</a></li><li><a href="EntityRef.html">EntityRef</a></li><li><a href="HookContainer.html">HookContainer</a></li><li><a href="Line3.html">Line3</a></li><li><a href="MapBackend.html">MapBackend</a></li><li><a href="Mapper.html">Mapper</a></li><li><a href="NodeCleanupAction.html">NodeCleanupAction</a></li><li><a href="NodeRef.html">NodeRef</a></li><li><a href="Path.html">Path</a></li><li><a href="RenderContext.html">RenderContext</a></li><li><a href="SetNodeSpaceAction.html">SetNodeSpaceAction</a></li><li><a href="SqlJsMapBackend.html">SqlJsMapBackend</a></li><li><a href="TranslateAction.html">TranslateAction</a></li><li><a href="Vector3.html">Vector3</a></li></ul><h3>Global</h3><ul><li><a href="global.html#asyncFrom">asyncFrom</a></li><li><a href="global.html#merge">merge</a></li><li><a href="global.html#mod">mod</a></li></ul>
 </nav>
 
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Tue Jan 03 2023 16:55:14 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Thu Jan 05 2023 01:02:08 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>
