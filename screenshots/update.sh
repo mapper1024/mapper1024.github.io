@@ -12,7 +12,7 @@ find -maxdepth 1 -name "*.thumb.png" -delete
 rm -f default.png default.thumb.png
 
 find -name "*.png" -prune | while read n; do
-	convert -resize 25% "$n" "${n%.*}.thumb.png" &
+	convert -resize 25% -strip "$n" "${n%.*}.thumb.png" &
 done
 
 wait
