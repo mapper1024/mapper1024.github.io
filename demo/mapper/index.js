@@ -625,9 +625,18 @@ class NodeRef extends EntityRef {
 	async getParent() {
 		let parent = this.cache.parent;
 		if(parent === undefined) {
-			parent = this.cache.parent = this.backend.getNodeParent(this.id);
+			parent = this.cache.parent = await this.backend.getNodeParent(this.id);
 		}
 		return parent;
+	}
+
+	async setParent(parent) {
+		await this.clearParentCache();
+
+		this.cache.parent = parent;
+		await this.backend.setNodeParent(this.id, parent.id);
+
+		await this.clearParentCache();
 	}
 
 	/** Get all children of this node.
@@ -1283,6 +1292,10 @@ class MapBackend {
 		throw "getNodeParent not implemented";
 	}
 
+	async setNodeParent(nodeId, parentId) {
+		throw "setNodeParent not implemented";
+	}
+
 	/** Get all direct children of a node.
 	 * @returns {AsyncIterable.<NodeRef>}
 	 */
@@ -1616,6 +1629,9 @@ class SqlJsMapBackend extends MapBackend {
 		this.s_getNodeType = this.db.prepare("SELECT nodetype FROM node WHERE node.entityid = $nodeId");
 
 		this.s_getNodeParent = this.db.prepare("SELECT nodep.entityid AS parentid FROM node AS nodep INNER JOIN node AS nodec ON nodep.entityid = nodec.parentid INNER JOIN entity ON entity.entityid = nodep.entityid WHERE nodec.entityid = $nodeId");
+
+		this.s_setNodeParent = this.db.prepare("UPDATE node SET parentid = $parentId WHERE entityid = $entityId");
+
 		this.s_getNodeChildren = this.db.prepare("SELECT node.entityid FROM node INNER JOIN entity ON node.entityid = entity.entityid WHERE parentID = $nodeId AND entity.valid = true");
 		this.s_getNodeEdges = this.db.prepare("SELECT edge1.edgeid FROM node_edge edge1 INNER JOIN node_edge edge2 ON (edge1.edgeid = edge2.edgeid AND edge1.nodeid != edge2.nodeid) INNER JOIN entity entity1 ON entity1.entityid = edge1.edgeid INNER JOIN entity entity2 ON entity2.entityid = edge2.nodeid INNER JOIN entity nodeentity1 ON nodeentity1.entityid = edge1.nodeid INNER JOIN entity nodeentity2 ON nodeentity2.entityid = edge2.nodeid WHERE edge1.nodeid = $nodeId AND entity1.valid = true AND entity2.valid = true AND nodeentity1.valid = TRUE AND nodeentity2.valid = TRUE");
 		this.s_getEdgeNodes = this.db.prepare("SELECT nodeid FROM node_edge INNER JOIN entity ON nodeid = entity.entityid WHERE edgeid = $edgeId");
@@ -1753,6 +1769,10 @@ class SqlJsMapBackend extends MapBackend {
 	async getNodeParent(nodeId) {
 		const row = this.s_getNodeParent.get({$nodeId: nodeId});
 		return (row.length > 0 && row[0]) ? this.getNodeRef(row[0]) : null;
+	}
+
+	async setNodeParent(nodeId, parentId) {
+		this.s_setNodeParent.run({$entityId: nodeId, $parentId: parentId});
 	}
 
 	async * getNodeChildren(nodeId) {
@@ -2145,6 +2165,28 @@ class ChangeNameAction extends Action {
 	}
 }
 
+class UnremoveAction extends Action {
+	async perform() {
+		await this.context.mapper.unremoveNodes(this.options.nodeRefs);
+		return new RemoveAction(this.context, {nodeRefs: this.options.nodeRefs});
+	}
+
+	empty() {
+		return this.options.nodeRefs.length === 0;
+	}
+}
+
+class RemoveAction extends Action {
+	async perform() {
+		const affectedNodeRefs = await this.context.mapper.removeNodes(this.options.nodeRefs);
+		return new UnremoveAction(this.context, {nodeRefs: affectedNodeRefs});
+	}
+
+	empty() {
+		return this.options.nodeRefs.length === 0;
+	}
+}
+
 /** Cleans up an object node by removing the most point children possible while still retaining the overall shape.
  * Options:
  * - nodeRef: The object {NodeRef} to be cleaned up.
@@ -2257,25 +2299,57 @@ class NodeCleanupAction extends Action {
 	}
 }
 
-class UnremoveAction extends Action {
+class ChangeParentAction extends Action {
 	async perform() {
-		await this.context.mapper.unremoveNodes(this.options.nodeRefs);
-		return new RemoveAction(this.context, {nodeRefs: this.options.nodeRefs});
-	}
-
-	empty() {
-		return this.options.nodeRefs.length === 0;
+		const oldParent = await this.options.nodeRef.getParent();
+		await this.options.nodeRef.setParent(this.options.parent);
+		await this.context.mapper.hooks.call("updateNode", this.options.parent);
+		return new ChangeParentAction(this.context, {nodeRef: this.options.nodeRef, parent: oldParent});
 	}
 }
 
-class RemoveAction extends Action {
+/** Merge nodes of the same type together.
+ * Options:
+ * - nodeRefs: Array of {NodeRef} to try to merge together
+ */
+class MergeAction extends Action {
 	async perform() {
-		const affectedNodeRefs = await this.context.mapper.removeNodes(this.options.nodeRefs);
-		return new UnremoveAction(this.context, {nodeRefs: affectedNodeRefs});
+		const undoActions = [];
+
+		if(await this.possible()) {
+			const nodeRefs = await asyncFrom(this.getNodeRefs());
+			const target = nodeRefs[0];
+			for(const other of nodeRefs) {
+				if(other !== target) {
+					for(const childNodeRef of (await asyncFrom(other.getChildren()))) {
+						undoActions.push(await this.context.performAction(new ChangeParentAction(this.context, {nodeRef: childNodeRef, parent: target}), false));
+					}
+					undoActions.push(await this.context.performAction(new RemoveAction(this.context, {nodeRefs: [other]})));
+				}
+			}
+
+			undoActions.push(new NodeCleanupAction(this.context, {nodeRef: target}));
+		}
+
+		return new BulkAction(this.context, {actions: undoActions});
 	}
 
-	empty() {
-		return this.options.nodeRefs.length === 0;
+	async possible() {
+		const types = new Set();
+		for await (const nodeRef of this.getNodeRefs()) {
+			types.add((await nodeRef.getType()).id);
+		}
+		return types.size === 1;
+	}
+
+	async * getNodeRefs() {
+		const nodeRefs = [];
+		for(const nodeRef of this.options.nodeRefs) {
+			if(await nodeRef.valid()) {
+				nodeRefs.push(nodeRef);
+			}
+		}
+		yield* nodeRefs;
 	}
 }
 
@@ -3185,8 +3259,10 @@ class NodeRender {
 }
 
 class AddBrush extends Brush {
-	constructor(context) {
+	constructor(context, extend) {
 		super(context);
+
+		this.extend = extend;
 
 		this.nodeTypeIndex = 0;
 		this.lastTypeChange = 0;
@@ -3220,8 +3296,14 @@ class AddBrush extends Brush {
 	}
 
 	displayButton(button) {
-		button.innerText = "Add";
-		button.title = "Add Objects [shortcut: 'a']";
+		if(this.extend) {
+			button.innerText = "Extend";
+			button.title = "Extend or Add Objects [shortcut: 'e']";
+		}
+		else {
+			button.innerText = "Add";
+			button.title = "Add Objects [shortcut: 'a']";
+		}
 	}
 
 	async displaySidebar(brushbar, container) {
@@ -3406,7 +3488,7 @@ class AddBrush extends Brush {
 		const mouseDragEvent = new DrawEvent(this.context, where);
 
 		const selectionParent = await mouseDragEvent.getSelectionParent();
-		if(selectionParent && (await selectionParent.getType()).id === this.getNodeType().id) {
+		if(this.extend && selectionParent && (await selectionParent.getType()).id === this.getNodeType().id) {
 			this.parentNode = selectionParent;
 			this.undoParent = false;
 		}
@@ -3745,29 +3827,20 @@ class SelectBrush extends Brush {
 		return ret;
 	}
 
-	async getSelectedNodeRef() {
-		const originNodeRefs = Array.from(this.context.selection.getOrigins());
-		if(originNodeRefs.length === 1) {
-			// Exactly one node selected.
-			const nodeRef = originNodeRefs[0];
-			if(await nodeRef.valid()) {
-				return nodeRef;
-			}
-			else {
-				return null;
-			}
-		}
-		else {
-			// 0 or 2+ nodes selected, so we can't return just one.
-			return null;
-		}
-	}
-
 	async displaySidebar(brushbar, container) {
-		const make = async (nodeRef) => {
-			if(nodeRef) {
-				container.innerText = "";
+		const make = async () => {
+			const originNodeRefsAll = Array.from(this.context.selection.getOrigins());
+			const originNodeRefs = [];
 
+			for(const nodeRef of originNodeRefsAll) {
+				if(await nodeRef.valid()) {
+					originNodeRefs.push(nodeRef);
+				}
+			}
+
+			container.innerText = "";
+
+			const drawNodeRef = async (nodeRef, container) => {
 				const nodeType = await nodeRef.getType();
 
 				const idRow = document.createElement("div");
@@ -3809,6 +3882,12 @@ class SelectBrush extends Brush {
 				c.globalAlpha = 1;
 				c.fillStyle = "white";
 				c.fillText(text, 0, 0);
+			};
+
+			if(originNodeRefs.length === 1) {
+				const nodeRef = originNodeRefs[0];
+
+				await drawNodeRef(nodeRef, container);
 
 				const nameLabel = document.createElement("h2");
 				nameLabel.innerText = "Label";
@@ -3840,17 +3919,33 @@ class SelectBrush extends Brush {
 				};
 				nameRow.appendChild(nameButton);
 			}
+			else if(originNodeRefs.length > 1) {
+				const mergeAction = new MergeAction(this.context, {nodeRefs: originNodeRefs});
+				if(await mergeAction.possible()) {
+					const mergeButton = document.createElement("button");
+					mergeButton.innerText = "Merge";
+					mergeButton.title = "Merge selected nodes together [shortcut: m]";
+					mergeButton.onclick = async () => {
+						await this.context.performAction(mergeAction, true);
+					};
+					container.appendChild(mergeButton);
+				}
+
+				for(const nodeRef of originNodeRefs) {
+					await drawNodeRef(nodeRef, container);
+				}
+			}
 			else {
 				container.innerText = "";
 			}
 		};
 
-		await make(await this.getSelectedNodeRef());
+		await make();
 		this.hooks.add("context_selection_change", async () => {
-			await make(await this.getSelectedNodeRef());
+			await make();
 		});
 		this.hooks.add("mapper_update", async () => {
-			await make(await this.getSelectedNodeRef());
+			await make();
 		});
 	}
 }
@@ -4274,7 +4369,7 @@ function style() {
 }
 
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.5.0";
+let version = "0.5.1";
 
 /** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
@@ -4337,7 +4432,8 @@ class RenderContext {
 		this.distanceMarkers = {};
 
 		this.brushes = {
-			add: new AddBrush(this),
+			add: new AddBrush(this, false),
+			extend: new AddBrush(this, true),
 			select: new SelectBrush(this),
 			"delete": new DeleteBrush(this),
 			"peg1": new DistancePegBrush(this, 1),
@@ -4489,8 +4585,14 @@ class RenderContext {
 			else if(event.key === "a") {
 				this.changeBrush(this.brushes.add);
 			}
+			else if(event.key === "e") {
+				this.changeBrush(this.brushes.extend);
+			}
 			else if(event.key === "s") {
 				this.changeBrush(this.brushes.select);
+			}
+			else if(event.key === "m") {
+				await this.performAction(new MergeAction(this, {nodeRefs: Array.from(this.selection.getOrigins())}), true);
 			}
 			else if(event.key === "l") {
 				const layerArray = Array.from(this.mapper.backend.layerRegistry.getLayers());
@@ -5469,7 +5571,7 @@ class RenderContext {
 			infoLine("Click to add terrain");
 		}
 		else if(this.brush instanceof SelectBrush) {
-			infoLine("Click to select, drag to move.");
+			infoLine("Click to select, drag to move. Hold Control and click to select multiply objects.");
 		}
 		else if(this.brush instanceof DeleteBrush) {
 			infoLine("Click to delete an area. Hold Shift and click to delete an entire object.");
@@ -6010,8 +6112,6 @@ class Mapper {
 		const nodeRefsWithChildren = Array.from(nodeIds, (nodeId) => this.backend.getNodeRef(nodeId));
 		const parentNodeIds = new Set();
 
-		await this.hooks.call("removeNodes", nodeRefsWithChildren);
-
 		for(const nodeRef of nodeRefsWithChildren) {
 			const parent = await nodeRef.getParent();
 			if(parent && !nodeIds.has(parent.id)) {
@@ -6027,6 +6127,8 @@ class Mapper {
 				nodeRefsWithChildren.push(nodeRef);
 			}
 		}
+
+		await this.hooks.call("removeNodes", nodeRefsWithChildren);
 
 		return nodeRefsWithChildren;
 	}
