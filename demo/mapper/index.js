@@ -2061,7 +2061,9 @@ class Action {
 	/** Perform the action.
 	 * @return {Action} An action that completely undoes the performed action.
 	 */
-	async perform() {}
+	async perform() {
+		throw "perform not implemented";
+	}
 }
 
 /** An action composed of several actions. Will handle creating the needed bulk action to undo the actions in order.
@@ -2090,6 +2092,21 @@ class BulkAction extends Action {
 				return false;
 			}
 		}
+		return true;
+	}
+
+	allMatchesFilter(f) {
+		for(const action of this.options.actions) {
+			if(action instanceof BulkAction) {
+				if(!action.allMatchesFilter(f)) {
+					return false;
+				}
+			}
+			else if(!f(action)) {
+				return false;
+			}
+		}
+
 		return true;
 	}
 }
@@ -3504,6 +3521,191 @@ class AddBrush extends Brush {
 	}
 }
 
+class AreaBrushAdd extends Action {
+	empty() {
+		return this.options.toAdd.length === 0;
+	}
+
+	async perform() {
+		for(const pair of this.options.toAdd) {
+			this.options.brush.tiles[pair[0]][pair[1]] = true;
+		}
+
+		await this.options.brush.hooks.call("update");
+
+		return new AreaBrushDelete(this.context, {brush: this.options.brush, toRemove: this.options.toAdd});
+	}
+}
+
+class AreaBrushDelete extends Action {
+	empty() {
+		return this.options.toRemove.length === 0;
+	}
+
+	async perform() {
+		for(const pair of this.options.toRemove) {
+			delete this.options.brush.tiles[pair[0]][pair[1]];
+		}
+
+		await this.options.brush.hooks.call("update");
+
+		return new AreaBrushAdd(this.context, {brush: this.options.brush, toAdd: this.options.toRemove});
+	}
+}
+
+class AreaBrush extends Brush {
+	constructor(context) {
+		super(context);
+
+		this.tiles = {};
+		this.hooks.add("context_changed_zoom", async () => {
+			await this.reset();
+		});
+
+		this.hooks.add("update", () => {
+			this.context.requestRedraw();
+		});
+	}
+
+	async reset() {
+		const toRemove = [];
+		for(const x in this.tiles) {
+			const tilesX = this.tiles[x];
+			for(const y in tilesX) {
+				toRemove.push([x, y]);
+			}
+		}
+
+		await this.context.performAction(new AreaBrushDelete(this.context, {brush: this, toRemove: toRemove}), true);
+		const f = (action) => action instanceof AreaBrushAdd || action instanceof AreaBrushDelete;
+		await this.context.stripDoStack(action => (f(action) || (action instanceof BulkAction && action.allMatchesFilter(f))));
+	}
+
+	async displaySidebar(brushbar, container) {
+		const make = async () => {
+			const squareMeters = this.getAreaSelectedSquareMeters();
+			const squareKilometers = squareMeters / (1000 ** 2);
+			container.innerText = `${squareKilometers.toFixed(2)}km²`;
+
+			container.appendChild(document.createElement("hr"));
+
+			const resetButton = document.createElement("button");
+			resetButton.innerText = "Reset";
+			resetButton.title = "Reset selected tiles [shortcut: Shift+c]";
+			resetButton.onclick = () => {
+				this.reset();
+			};
+			container.appendChild(resetButton);
+		};
+
+		await make();
+		this.hooks.add("update", make);
+	}
+
+	displayButton(button) {
+		button.innerText = "Calculate Area";
+		button.title = "Calculate area [shortcut: 'c']";
+	}
+
+	getDescription() {
+		const squareMeters = this.getAreaSelectedSquareMeters();
+		const squareKilometers = squareMeters / (1000 ** 2);
+		return `Area calculation (${squareKilometers.toFixed(2)}km²)`;
+	}
+
+	getAreaSelectedSquareMeters() {
+		let n = 0;
+
+		for(const x in this.tiles) {
+			const tilesX = this.tiles[x];
+			for(const y in tilesX) {
+				n++;
+			}
+		}
+
+		return n * (this.context.mapper.unitsToMeters(this.context.pixelsToUnits(tileSize)) ** 2);
+	}
+
+	async draw(c, where) {
+		c.strokeStyle = "black";
+
+		for(const x in this.tiles) {
+			const tilesX = this.tiles[x];
+			for(const y in tilesX) {
+				const p = (new Vector3(+x, +y, 0)).subtract(this.context.scrollOffset);
+				c.strokeRect(p.x, p.y, tileSize, tileSize);
+			}
+		}
+
+		super.draw(c, where);
+	}
+
+	async triggerAtPosition(brushPosition) {
+		const absoluteBrushPosition = brushPosition.add(this.context.scrollOffset);
+		const radius = this.getRadius();
+		const radiusSquared = radius * radius;
+		const removing = this.context.isKeyDown("Shift");
+
+		const brushBox = Box3.fromRadius(absoluteBrushPosition, radius).map((v) => v.map((c) => c - c % tileSize));
+
+		const toAdd = [];
+		const toRemove = [];
+
+		for(let x = brushBox.a.x; x <= brushBox.b.x; x += tileSize) {
+			let tilesX = this.tiles[x];
+			if(tilesX === undefined) {
+				this.tiles[x] = tilesX = {};
+			}
+			for(let y = brushBox.a.y; y <= brushBox.b.y; y += tileSize) {
+				const vector = new Vector3(x, y, 0);
+				if(vector.subtract(absoluteBrushPosition).lengthSquared() < radiusSquared) {
+					if(removing) {
+						if(tilesX[y]) {
+							toRemove.push([x, y]);
+						}
+					}
+					else {
+						if(!tilesX[y]) {
+							toAdd.push([x, y]);
+						}
+					}
+				}
+			}
+		}
+
+		if(removing) {
+			return new AreaBrushDelete(this.context, {
+				brush: this,
+				toRemove: toRemove,
+			});
+		}
+		else {
+			return new AreaBrushAdd(this.context, {
+				brush: this,
+				toAdd: toAdd,
+			});
+		}
+	}
+
+	async triggerOnPath(path) {
+		const actions = [];
+		for(const vertex of path.withBisectedLines(this.getRadius() / 2).vertices()) {
+			actions.push(await this.triggerAtPosition(vertex));
+		}
+		return new BulkAction(this.context, {actions: actions});
+	}
+
+	async trigger(drawEvent) {
+		const action = await this.triggerOnPath(drawEvent.path.asMostRecent());
+		const undoAction = await this.context.performAction(action);
+		return undoAction;
+	}
+
+	async activate(where) {
+		return new DrawEvent(this.context, where);
+	}
+}
+
 class Selection {
 	constructor(context, nodeIds) {
 		this.context = context;
@@ -4017,6 +4219,7 @@ class Brushbar {
 		this.context.hooks.add("redid", updateUndoStatus);
 		this.context.hooks.add("action", updateUndoStatus);
 		this.context.hooks.add("undo_pushed", updateUndoStatus);
+		this.context.hooks.add("do_stripped", updateUndoStatus);
 		updateUndoStatus();
 
 		this.element.appendChild(document.createElement("hr"));
@@ -4369,7 +4572,7 @@ function style() {
 }
 
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.5.1";
+let version = "0.5.2";
 
 /** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
@@ -4436,6 +4639,7 @@ class RenderContext {
 			extend: new AddBrush(this, true),
 			select: new SelectBrush(this),
 			"delete": new DeleteBrush(this),
+			"area": new AreaBrush(this),
 			"peg1": new DistancePegBrush(this, 1),
 			"peg2": new DistancePegBrush(this, 2),
 
@@ -4591,6 +4795,14 @@ class RenderContext {
 			else if(event.key === "s") {
 				this.changeBrush(this.brushes.select);
 			}
+			else if(event.key === "c") {
+				this.changeBrush(this.brushes.area);
+			}
+			else if(event.key === "C") {
+				if(this.brush === this.brushes.area) {
+					this.brushes.area.reset();
+				}
+			}
 			else if(event.key === "m") {
 				await this.performAction(new MergeAction(this, {nodeRefs: Array.from(this.selection.getOrigins())}), true);
 			}
@@ -4691,11 +4903,11 @@ class RenderContext {
 		this.parentObserver.observe(this.parent);
 
 		this.hooks.add("", async (hookName, ...args) => {
-			this.brush.hooks.call("context_" + hookName, ...args);
+			await this.brush.hooks.call("context_" + hookName, ...args);
 		});
 
 		this.mapper.hooks.add("", async (hookName, ...args) => {
-			this.brush.hooks.call("mapper_" + hookName, ...args);
+			await this.brush.hooks.call("mapper_" + hookName, ...args);
 		});
 
 		this.recalculateSize();
@@ -5081,6 +5293,12 @@ class RenderContext {
 		}
 		await this.hooks.call("action", action, undo, addToUndoStack);
 		return undo;
+	}
+
+	async stripDoStack(filter) {
+		this.undoStack = this.undoStack.filter(action => !filter(action));
+		this.redoStack = this.redoStack.filter(action => !filter(action));
+		await this.hooks.call("do_stripped");
 	}
 
 	hoveringOverSelection() {
@@ -5575,6 +5793,9 @@ class RenderContext {
 		}
 		else if(this.brush instanceof DeleteBrush) {
 			infoLine("Click to delete an area. Hold Shift and click to delete an entire object.");
+		}
+		else if(this.brush instanceof AreaBrush) {
+			infoLine("Click to select an area. Hold Shift and click to delete part of that area.");
 		}
 		infoLine("Right click or arrow keys to move map. ` to toggle debug mode.");
 
