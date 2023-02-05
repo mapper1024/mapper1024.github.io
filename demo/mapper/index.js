@@ -625,9 +625,18 @@ class NodeRef extends EntityRef {
 	async getParent() {
 		let parent = this.cache.parent;
 		if(parent === undefined) {
-			parent = this.cache.parent = this.backend.getNodeParent(this.id);
+			parent = this.cache.parent = await this.backend.getNodeParent(this.id);
 		}
 		return parent;
+	}
+
+	async setParent(parent) {
+		await this.clearParentCache();
+
+		this.cache.parent = parent;
+		await this.backend.setNodeParent(this.id, parent.id);
+
+		await this.clearParentCache();
 	}
 
 	/** Get all children of this node.
@@ -1283,6 +1292,10 @@ class MapBackend {
 		throw "getNodeParent not implemented";
 	}
 
+	async setNodeParent(nodeId, parentId) {
+		throw "setNodeParent not implemented";
+	}
+
 	/** Get all direct children of a node.
 	 * @returns {AsyncIterable.<NodeRef>}
 	 */
@@ -1616,6 +1629,9 @@ class SqlJsMapBackend extends MapBackend {
 		this.s_getNodeType = this.db.prepare("SELECT nodetype FROM node WHERE node.entityid = $nodeId");
 
 		this.s_getNodeParent = this.db.prepare("SELECT nodep.entityid AS parentid FROM node AS nodep INNER JOIN node AS nodec ON nodep.entityid = nodec.parentid INNER JOIN entity ON entity.entityid = nodep.entityid WHERE nodec.entityid = $nodeId");
+
+		this.s_setNodeParent = this.db.prepare("UPDATE node SET parentid = $parentId WHERE entityid = $entityId");
+
 		this.s_getNodeChildren = this.db.prepare("SELECT node.entityid FROM node INNER JOIN entity ON node.entityid = entity.entityid WHERE parentID = $nodeId AND entity.valid = true");
 		this.s_getNodeEdges = this.db.prepare("SELECT edge1.edgeid FROM node_edge edge1 INNER JOIN node_edge edge2 ON (edge1.edgeid = edge2.edgeid AND edge1.nodeid != edge2.nodeid) INNER JOIN entity entity1 ON entity1.entityid = edge1.edgeid INNER JOIN entity entity2 ON entity2.entityid = edge2.nodeid INNER JOIN entity nodeentity1 ON nodeentity1.entityid = edge1.nodeid INNER JOIN entity nodeentity2 ON nodeentity2.entityid = edge2.nodeid WHERE edge1.nodeid = $nodeId AND entity1.valid = true AND entity2.valid = true AND nodeentity1.valid = TRUE AND nodeentity2.valid = TRUE");
 		this.s_getEdgeNodes = this.db.prepare("SELECT nodeid FROM node_edge INNER JOIN entity ON nodeid = entity.entityid WHERE edgeid = $edgeId");
@@ -1753,6 +1769,10 @@ class SqlJsMapBackend extends MapBackend {
 	async getNodeParent(nodeId) {
 		const row = this.s_getNodeParent.get({$nodeId: nodeId});
 		return (row.length > 0 && row[0]) ? this.getNodeRef(row[0]) : null;
+	}
+
+	async setNodeParent(nodeId, parentId) {
+		this.s_setNodeParent.run({$entityId: nodeId, $parentId: parentId});
 	}
 
 	async * getNodeChildren(nodeId) {
@@ -2041,7 +2061,9 @@ class Action {
 	/** Perform the action.
 	 * @return {Action} An action that completely undoes the performed action.
 	 */
-	async perform() {}
+	async perform() {
+		throw "perform not implemented";
+	}
 }
 
 /** An action composed of several actions. Will handle creating the needed bulk action to undo the actions in order.
@@ -2070,6 +2092,21 @@ class BulkAction extends Action {
 				return false;
 			}
 		}
+		return true;
+	}
+
+	allMatchesFilter(f) {
+		for(const action of this.options.actions) {
+			if(action instanceof BulkAction) {
+				if(!action.allMatchesFilter(f)) {
+					return false;
+				}
+			}
+			else if(!f(action)) {
+				return false;
+			}
+		}
+
 		return true;
 	}
 }
@@ -2142,6 +2179,28 @@ class ChangeNameAction extends Action {
 
 	empty() {
 		return false;
+	}
+}
+
+class UnremoveAction extends Action {
+	async perform() {
+		await this.context.mapper.unremoveNodes(this.options.nodeRefs);
+		return new RemoveAction(this.context, {nodeRefs: this.options.nodeRefs});
+	}
+
+	empty() {
+		return this.options.nodeRefs.length === 0;
+	}
+}
+
+class RemoveAction extends Action {
+	async perform() {
+		const affectedNodeRefs = await this.context.mapper.removeNodes(this.options.nodeRefs);
+		return new UnremoveAction(this.context, {nodeRefs: affectedNodeRefs});
+	}
+
+	empty() {
+		return this.options.nodeRefs.length === 0;
 	}
 }
 
@@ -2257,25 +2316,57 @@ class NodeCleanupAction extends Action {
 	}
 }
 
-class UnremoveAction extends Action {
+class ChangeParentAction extends Action {
 	async perform() {
-		await this.context.mapper.unremoveNodes(this.options.nodeRefs);
-		return new RemoveAction(this.context, {nodeRefs: this.options.nodeRefs});
-	}
-
-	empty() {
-		return this.options.nodeRefs.length === 0;
+		const oldParent = await this.options.nodeRef.getParent();
+		await this.options.nodeRef.setParent(this.options.parent);
+		await this.context.mapper.hooks.call("updateNode", this.options.parent);
+		return new ChangeParentAction(this.context, {nodeRef: this.options.nodeRef, parent: oldParent});
 	}
 }
 
-class RemoveAction extends Action {
+/** Merge nodes of the same type together.
+ * Options:
+ * - nodeRefs: Array of {NodeRef} to try to merge together
+ */
+class MergeAction extends Action {
 	async perform() {
-		const affectedNodeRefs = await this.context.mapper.removeNodes(this.options.nodeRefs);
-		return new UnremoveAction(this.context, {nodeRefs: affectedNodeRefs});
+		const undoActions = [];
+
+		if(await this.possible()) {
+			const nodeRefs = await asyncFrom(this.getNodeRefs());
+			const target = nodeRefs[0];
+			for(const other of nodeRefs) {
+				if(other !== target) {
+					for(const childNodeRef of (await asyncFrom(other.getChildren()))) {
+						undoActions.push(await this.context.performAction(new ChangeParentAction(this.context, {nodeRef: childNodeRef, parent: target}), false));
+					}
+					undoActions.push(await this.context.performAction(new RemoveAction(this.context, {nodeRefs: [other]})));
+				}
+			}
+
+			undoActions.push(new NodeCleanupAction(this.context, {nodeRef: target}));
+		}
+
+		return new BulkAction(this.context, {actions: undoActions});
 	}
 
-	empty() {
-		return this.options.nodeRefs.length === 0;
+	async possible() {
+		const types = new Set();
+		for await (const nodeRef of this.getNodeRefs()) {
+			types.add((await nodeRef.getType()).id);
+		}
+		return types.size === 1;
+	}
+
+	async * getNodeRefs() {
+		const nodeRefs = [];
+		for(const nodeRef of this.options.nodeRefs) {
+			if(await nodeRef.valid()) {
+				nodeRefs.push(nodeRef);
+			}
+		}
+		yield* nodeRefs;
 	}
 }
 
@@ -3185,8 +3276,10 @@ class NodeRender {
 }
 
 class AddBrush extends Brush {
-	constructor(context) {
+	constructor(context, extend) {
 		super(context);
+
+		this.extend = extend;
 
 		this.nodeTypeIndex = 0;
 		this.lastTypeChange = 0;
@@ -3220,8 +3313,14 @@ class AddBrush extends Brush {
 	}
 
 	displayButton(button) {
-		button.innerText = "Add";
-		button.title = "Add Objects [shortcut: 'a']";
+		if(this.extend) {
+			button.innerText = "Extend";
+			button.title = "Extend or Add Objects [shortcut: 'e']";
+		}
+		else {
+			button.innerText = "Add";
+			button.title = "Add Objects [shortcut: 'a']";
+		}
 	}
 
 	async displaySidebar(brushbar, container) {
@@ -3406,9 +3505,21 @@ class AddBrush extends Brush {
 		const mouseDragEvent = new DrawEvent(this.context, where);
 
 		const selectionParent = await mouseDragEvent.getSelectionParent();
-		if(selectionParent && (await selectionParent.getType()).id === this.getNodeType().id) {
-			this.parentNode = selectionParent;
-			this.undoParent = false;
+		if(this.extend) {
+			if(selectionParent) {
+				if((await selectionParent.getType()).id === this.getNodeType().id) {
+					this.parentNode = selectionParent;
+					this.undoParent = false;
+				}
+				else {
+					this.context.pushInfoMessage("Cannot extend: you are pointing at an object of a different type");
+					return;
+				}
+			}
+			else {
+				this.context.pushInfoMessage("Cannot extend: you are not pointing at a map object");
+				return;
+			}
 		}
 		else {
 			this.parentNode = await this.context.mapper.insertNode(this.context.canvasPointToMap(where), "object", {
@@ -3419,6 +3530,191 @@ class AddBrush extends Brush {
 		}
 
 		return mouseDragEvent;
+	}
+}
+
+class AreaBrushAdd extends Action {
+	empty() {
+		return this.options.toAdd.length === 0;
+	}
+
+	async perform() {
+		for(const pair of this.options.toAdd) {
+			this.options.brush.tiles[pair[0]][pair[1]] = true;
+		}
+
+		await this.options.brush.hooks.call("update");
+
+		return new AreaBrushDelete(this.context, {brush: this.options.brush, toRemove: this.options.toAdd});
+	}
+}
+
+class AreaBrushDelete extends Action {
+	empty() {
+		return this.options.toRemove.length === 0;
+	}
+
+	async perform() {
+		for(const pair of this.options.toRemove) {
+			delete this.options.brush.tiles[pair[0]][pair[1]];
+		}
+
+		await this.options.brush.hooks.call("update");
+
+		return new AreaBrushAdd(this.context, {brush: this.options.brush, toAdd: this.options.toRemove});
+	}
+}
+
+class AreaBrush extends Brush {
+	constructor(context) {
+		super(context);
+
+		this.tiles = {};
+		this.hooks.add("context_changed_zoom", async () => {
+			await this.reset();
+		});
+
+		this.hooks.add("update", () => {
+			this.context.requestRedraw();
+		});
+	}
+
+	async reset() {
+		const toRemove = [];
+		for(const x in this.tiles) {
+			const tilesX = this.tiles[x];
+			for(const y in tilesX) {
+				toRemove.push([x, y]);
+			}
+		}
+
+		await this.context.performAction(new AreaBrushDelete(this.context, {brush: this, toRemove: toRemove}), true);
+		const f = (action) => action instanceof AreaBrushAdd || action instanceof AreaBrushDelete;
+		await this.context.stripDoStack(action => (f(action) || (action instanceof BulkAction && action.allMatchesFilter(f))));
+	}
+
+	async displaySidebar(brushbar, container) {
+		const make = async () => {
+			const squareMeters = this.getAreaSelectedSquareMeters();
+			const squareKilometers = squareMeters / (1000 ** 2);
+			container.innerText = `${squareKilometers.toFixed(2)}km²`;
+
+			container.appendChild(document.createElement("hr"));
+
+			const resetButton = document.createElement("button");
+			resetButton.innerText = "Reset";
+			resetButton.title = "Reset selected tiles [shortcut: Shift+c]";
+			resetButton.onclick = () => {
+				this.reset();
+			};
+			container.appendChild(resetButton);
+		};
+
+		await make();
+		this.hooks.add("update", make);
+	}
+
+	displayButton(button) {
+		button.innerText = "Calculate Area";
+		button.title = "Calculate area [shortcut: 'c']";
+	}
+
+	getDescription() {
+		const squareMeters = this.getAreaSelectedSquareMeters();
+		const squareKilometers = squareMeters / (1000 ** 2);
+		return `Area calculation (${squareKilometers.toFixed(2)}km²)`;
+	}
+
+	getAreaSelectedSquareMeters() {
+		let n = 0;
+
+		for(const x in this.tiles) {
+			const tilesX = this.tiles[x];
+			for(const y in tilesX) {
+				n++;
+			}
+		}
+
+		return n * (this.context.mapper.unitsToMeters(this.context.pixelsToUnits(tileSize)) ** 2);
+	}
+
+	async draw(c, where) {
+		c.strokeStyle = "black";
+
+		for(const x in this.tiles) {
+			const tilesX = this.tiles[x];
+			for(const y in tilesX) {
+				const p = (new Vector3(+x, +y, 0)).subtract(this.context.scrollOffset);
+				c.strokeRect(p.x, p.y, tileSize, tileSize);
+			}
+		}
+
+		await super.draw(c, where);
+	}
+
+	async triggerAtPosition(brushPosition) {
+		const absoluteBrushPosition = brushPosition.add(this.context.scrollOffset);
+		const radius = this.getRadius();
+		const radiusSquared = radius * radius;
+		const removing = this.context.isKeyDown("Shift");
+
+		const brushBox = Box3.fromRadius(absoluteBrushPosition, radius).map((v) => v.map((c) => c - c % tileSize));
+
+		const toAdd = [];
+		const toRemove = [];
+
+		for(let x = brushBox.a.x; x <= brushBox.b.x; x += tileSize) {
+			let tilesX = this.tiles[x];
+			if(tilesX === undefined) {
+				this.tiles[x] = tilesX = {};
+			}
+			for(let y = brushBox.a.y; y <= brushBox.b.y; y += tileSize) {
+				const vector = new Vector3(x, y, 0);
+				if(vector.subtract(absoluteBrushPosition).lengthSquared() < radiusSquared) {
+					if(removing) {
+						if(tilesX[y]) {
+							toRemove.push([x, y]);
+						}
+					}
+					else {
+						if(!tilesX[y]) {
+							toAdd.push([x, y]);
+						}
+					}
+				}
+			}
+		}
+
+		if(removing) {
+			return new AreaBrushDelete(this.context, {
+				brush: this,
+				toRemove: toRemove,
+			});
+		}
+		else {
+			return new AreaBrushAdd(this.context, {
+				brush: this,
+				toAdd: toAdd,
+			});
+		}
+	}
+
+	async triggerOnPath(path) {
+		const actions = [];
+		for(const vertex of path.withBisectedLines(this.getRadius() / 2).vertices()) {
+			actions.push(await this.triggerAtPosition(vertex));
+		}
+		return new BulkAction(this.context, {actions: actions});
+	}
+
+	async trigger(drawEvent) {
+		const action = await this.triggerOnPath(drawEvent.path.asMostRecent());
+		const undoAction = await this.context.performAction(action);
+		return undoAction;
+	}
+
+	async activate(where) {
+		return new DrawEvent(this.context, where);
 	}
 }
 
@@ -3745,29 +4041,20 @@ class SelectBrush extends Brush {
 		return ret;
 	}
 
-	async getSelectedNodeRef() {
-		const originNodeRefs = Array.from(this.context.selection.getOrigins());
-		if(originNodeRefs.length === 1) {
-			// Exactly one node selected.
-			const nodeRef = originNodeRefs[0];
-			if(await nodeRef.valid()) {
-				return nodeRef;
-			}
-			else {
-				return null;
-			}
-		}
-		else {
-			// 0 or 2+ nodes selected, so we can't return just one.
-			return null;
-		}
-	}
-
 	async displaySidebar(brushbar, container) {
-		const make = async (nodeRef) => {
-			if(nodeRef) {
-				container.innerText = "";
+		const make = async () => {
+			const originNodeRefsAll = Array.from(this.context.selection.getOrigins());
+			const originNodeRefs = [];
 
+			for(const nodeRef of originNodeRefsAll) {
+				if(await nodeRef.valid()) {
+					originNodeRefs.push(nodeRef);
+				}
+			}
+
+			container.innerText = "";
+
+			const drawNodeRef = async (nodeRef, container) => {
 				const nodeType = await nodeRef.getType();
 
 				const idRow = document.createElement("div");
@@ -3809,6 +4096,12 @@ class SelectBrush extends Brush {
 				c.globalAlpha = 1;
 				c.fillStyle = "white";
 				c.fillText(text, 0, 0);
+			};
+
+			if(originNodeRefs.length === 1) {
+				const nodeRef = originNodeRefs[0];
+
+				await drawNodeRef(nodeRef, container);
 
 				const nameLabel = document.createElement("h2");
 				nameLabel.innerText = "Label";
@@ -3840,17 +4133,33 @@ class SelectBrush extends Brush {
 				};
 				nameRow.appendChild(nameButton);
 			}
+			else if(originNodeRefs.length > 1) {
+				const mergeAction = new MergeAction(this.context, {nodeRefs: originNodeRefs});
+				if(await mergeAction.possible()) {
+					const mergeButton = document.createElement("button");
+					mergeButton.innerText = "Merge";
+					mergeButton.title = "Merge selected nodes together [shortcut: m]";
+					mergeButton.onclick = async () => {
+						await this.context.performAction(mergeAction, true);
+					};
+					container.appendChild(mergeButton);
+				}
+
+				for(const nodeRef of originNodeRefs) {
+					await drawNodeRef(nodeRef, container);
+				}
+			}
 			else {
 				container.innerText = "";
 			}
 		};
 
-		await make(await this.getSelectedNodeRef());
+		await make();
 		this.hooks.add("context_selection_change", async () => {
-			await make(await this.getSelectedNodeRef());
+			await make();
 		});
 		this.hooks.add("mapper_update", async () => {
-			await make(await this.getSelectedNodeRef());
+			await make();
 		});
 	}
 }
@@ -3922,6 +4231,7 @@ class Brushbar {
 		this.context.hooks.add("redid", updateUndoStatus);
 		this.context.hooks.add("action", updateUndoStatus);
 		this.context.hooks.add("undo_pushed", updateUndoStatus);
+		this.context.hooks.add("do_stripped", updateUndoStatus);
 		updateUndoStatus();
 
 		this.element.appendChild(document.createElement("hr"));
@@ -4274,7 +4584,7 @@ function style() {
 }
 
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.5.0";
+let version = "0.5.3";
 
 /** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
@@ -4300,6 +4610,9 @@ class RenderContext {
 		this.recalculateUpdate = [];
 		this.recalculateRemoved = [];
 		this.recalculateTranslated = [];
+
+		this.infoMessages = [];
+		this.infoMessageTimeout = 5000;
 
 		this.wantRecheckSelection = true;
 		this.wantUpdateSelection = true;
@@ -4337,9 +4650,11 @@ class RenderContext {
 		this.distanceMarkers = {};
 
 		this.brushes = {
-			add: new AddBrush(this),
+			add: new AddBrush(this, false),
+			extend: new AddBrush(this, true),
 			select: new SelectBrush(this),
 			"delete": new DeleteBrush(this),
+			"area": new AreaBrush(this),
 			"peg1": new DistancePegBrush(this, 1),
 			"peg2": new DistancePegBrush(this, 2),
 
@@ -4489,8 +4804,22 @@ class RenderContext {
 			else if(event.key === "a") {
 				this.changeBrush(this.brushes.add);
 			}
+			else if(event.key === "e") {
+				this.changeBrush(this.brushes.extend);
+			}
 			else if(event.key === "s") {
 				this.changeBrush(this.brushes.select);
+			}
+			else if(event.key === "c") {
+				this.changeBrush(this.brushes.area);
+			}
+			else if(event.key === "C") {
+				if(this.brush === this.brushes.area) {
+					this.brushes.area.reset();
+				}
+			}
+			else if(event.key === "m") {
+				await this.performAction(new MergeAction(this, {nodeRefs: Array.from(this.selection.getOrigins())}), true);
 			}
 			else if(event.key === "l") {
 				const layerArray = Array.from(this.mapper.backend.layerRegistry.getLayers());
@@ -4589,11 +4918,11 @@ class RenderContext {
 		this.parentObserver.observe(this.parent);
 
 		this.hooks.add("", async (hookName, ...args) => {
-			this.brush.hooks.call("context_" + hookName, ...args);
+			await this.brush.hooks.call("context_" + hookName, ...args);
 		});
 
 		this.mapper.hooks.add("", async (hookName, ...args) => {
-			this.brush.hooks.call("mapper_" + hookName, ...args);
+			await this.brush.hooks.call("mapper_" + hookName, ...args);
 		});
 
 		this.recalculateSize();
@@ -4604,6 +4933,15 @@ class RenderContext {
 
 		this.changeBrush(this.brushes.add);
 		this.setCurrentLayer(this.getCurrentLayer());
+	}
+
+	pushInfoMessage(message) {
+		this.infoMessages.push({
+			message: message,
+			when: performance.now(),
+		});
+
+		this.requestRedraw();
 	}
 
 	async undo() {
@@ -4960,6 +5298,14 @@ class RenderContext {
 			this.recalculateEntireViewport();
 		}
 
+		const oldLength = this.infoMessages.length;
+
+		this.infoMessages = this.infoMessages.filter(m => performance.now() - m.when < this.infoMessageTimeout);
+
+		if(this.infoMessages.length > 0 || this.infoMessages.length !== oldLength) {
+			this.requestRedraw();
+		}
+
 		// If anything's changed on the map, try to recalculate the renderings.
 		if(this.recalculateViewport || this.recalculateUpdate.length > 0 || this.recalculateRemoved.length > 0 || this.recalculateTranslated.length > 0) {
 			await this.recalculate(this.recalculateViewport, this.recalculateUpdate.splice(0, this.recalculateUpdate.length), this.recalculateRemoved.splice(0, this.recalculateRemoved.length), this.recalculateTranslated.splice(0, this.recalculateTranslated.length));
@@ -4979,6 +5325,12 @@ class RenderContext {
 		}
 		await this.hooks.call("action", action, undo, addToUndoStack);
 		return undo;
+	}
+
+	async stripDoStack(filter) {
+		this.undoStack = this.undoStack.filter(action => !filter(action));
+		this.redoStack = this.redoStack.filter(action => !filter(action));
+		await this.hooks.call("do_stripped");
 	}
 
 	hoveringOverSelection() {
@@ -5324,8 +5676,8 @@ class RenderContext {
 
 				for(const nodeId of nodeIds) {
 					const nodeRef = this.mapper.backend.getNodeRef(nodeId);
-					// Only render nodes in the current filter.
-					if(!await filter(nodeRef))
+					// Only render valid nodes in the current filter.
+					if(!await filter(nodeRef) || !(await nodeRef.valid()))
 						continue;
 
 					drawnNodeIds.add(nodeRef.id);
@@ -5469,10 +5821,13 @@ class RenderContext {
 			infoLine("Click to add terrain");
 		}
 		else if(this.brush instanceof SelectBrush) {
-			infoLine("Click to select, drag to move.");
+			infoLine("Click to select, drag to move. Hold Control and click to select multiply objects.");
 		}
 		else if(this.brush instanceof DeleteBrush) {
 			infoLine("Click to delete an area. Hold Shift and click to delete an entire object.");
+		}
+		else if(this.brush instanceof AreaBrush) {
+			infoLine("Click to select an area. Hold Shift and click to delete part of that area.");
 		}
 		infoLine("Right click or arrow keys to move map. ` to toggle debug mode.");
 
@@ -5768,6 +6123,9 @@ class RenderContext {
 
 		const c = this.canvas.getContext("2d");
 
+		c.textBaseline = "top";
+		c.font = "16px mono";
+
 		let width = 0;
 		let height = 0;
 
@@ -5801,9 +6159,51 @@ class RenderContext {
 		for(let i = 0; i < lines.length; i++) {
 			const text = lines[i];
 			c.fillStyle = "white";
-			c.textBaseline = "top";
-			c.font = "16px mono";
 			c.fillText(text, where.x, where.y + height * i);
+		}
+	}
+
+	async drawInfoMessages() {
+		const c = this.canvas.getContext("2d");
+
+		c.textBaseline = "top";
+		c.font = "24px mono";
+
+		const f = (message) => {
+			return Math.ceil(Math.max(0, 1 - (performance.now() - message.when) / this.infoMessageTimeout) * 0.5 * 24 + 24 * 0.5);
+		};
+
+		let width = 0;
+		let height = 0;
+
+		for(const message of this.infoMessages) {
+			const text = message.message;
+			const measure = c.measureText(text);
+			height = Math.max(height, Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent));
+			width = Math.max(width, measure.width);
+		}
+
+		const totalHeight = height * this.infoMessages.length;
+
+		const screenCenter = this.screenSize().divideScalar(2).round();
+
+		const where = new Vector3(screenCenter.x - width / 2, screenCenter.y - totalHeight / 2, 0);
+
+		c.fillStyle = "black";
+		c.globalAlpha = 0.5;
+		c.beginPath();
+		c.fillRect(where.x, where.y, width, totalHeight);
+		c.fill();
+		c.globalAlpha = 1;
+
+		for(let i = 0; i < this.infoMessages.length; i++) {
+			const message = this.infoMessages[i];
+			c.fillStyle = "white";
+			c.font = `${f(message)}px mono`;
+			const text = message.message;
+			const measure = c.measureText(text);
+			const actualHeight = Math.abs(measure.actualBoundingBoxAscent) + Math.abs(measure.actualBoundingBoxDescent);
+			c.fillText(text, where.x + Math.floor((width - measure.width) / 2), where.y + height * i + Math.floor((height - actualHeight) / 2));
 		}
 	}
 
@@ -5826,6 +6226,7 @@ class RenderContext {
 
 		await this.drawHelp();
 		await this.drawScale();
+		await this.drawInfoMessages();
 
 		if(this.debugMode) {
 			await this.drawDebug();
@@ -6010,8 +6411,6 @@ class Mapper {
 		const nodeRefsWithChildren = Array.from(nodeIds, (nodeId) => this.backend.getNodeRef(nodeId));
 		const parentNodeIds = new Set();
 
-		await this.hooks.call("removeNodes", nodeRefsWithChildren);
-
 		for(const nodeRef of nodeRefsWithChildren) {
 			const parent = await nodeRef.getParent();
 			if(parent && !nodeIds.has(parent.id)) {
@@ -6027,6 +6426,8 @@ class Mapper {
 				nodeRefsWithChildren.push(nodeRef);
 			}
 		}
+
+		await this.hooks.call("removeNodes", nodeRefsWithChildren);
 
 		return nodeRefsWithChildren;
 	}

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>JSDoc: Source: actions/change_name_action.js</title>
+    <title>JSDoc: Class: MergeAction</title>
 
     <script src="scripts/prettify/prettify.js"> </script>
     <script src="scripts/prettify/lang-css.js"> </script>
@@ -17,43 +17,139 @@
 
 <div id="main">
 
-    <h1 class="page-title">Source: actions/change_name_action.js</h1>
+    <h1 class="page-title">Class: MergeAction</h1>
 
     
 
 
 
+
+<section>
+
+<header>
     
-    <section>
-        <article>
-            <pre class="prettyprint source linenums"><code>import { Action } from "./action.js";
+        <h2><span class="attribs"><span class="type-signature"></span></span>MergeAction<span class="signature">()</span><span class="type-signature"></span></h2>
+        
+            <div class="class-description">Merge nodes of the same type together.
+Options:
+- nodeRefs: Array of {NodeRef} to try to merge together</div>
+        
+    
+</header>
 
-/** An action to change the name (label) of a node.
- * Options:
- * - name: The new name (label) for the node
- * - nodeRef: The {NodeRef} to change the name of.
- */
-class ChangeNameAction extends Action {
-	async perform() {
-		// Preserve the old name for undo.
-		const oldName = (await this.options.nodeRef.getPString("name")) || "";
+<article>
+    <div class="container-overview">
+    
+        
 
-		await this.options.nodeRef.setPString("name", this.options.name);
-		await this.context.mapper.hooks.call("updateNode", this.options.nodeRef);
+    
+    <h2>Constructor</h2>
+    
 
-		// Undo is just changing back to the old name.
-		return new ChangeNameAction(this.context, {nodeRef: this.options.nodeRef, name: oldName});
-	}
+    
+    <h4 class="name" id="MergeAction"><span class="type-signature"></span>new MergeAction<span class="signature">()</span><span class="type-signature"></span></h4>
+    
 
-	empty() {
-		return false;
-	}
-}
+    
 
-export { ChangeNameAction };
-</code></pre>
-        </article>
-    </section>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<dl class="details">
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+    <dt class="tag-source">Source:</dt>
+    <dd class="tag-source"><ul class="dummy"><li>
+        <a href="actions_merge_action.js.html">actions/merge_action.js</a>, <a href="actions_merge_action.js.html#line20">line 20</a>
+    </li></ul></dd>
+    
+
+    
+
+    
+
+    
+</dl>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+    </div>
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+
+    
+</article>
+
+</section>
 
 
 
