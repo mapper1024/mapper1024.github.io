@@ -97,6 +97,8 @@ class RenderContext {
 		this.requestedZoom = this.zoom;
 		this.lastZoomRequest = 0;
 		this.zoomRequestTimeout = 1000;
+		this.drawSelectionCanvas = true;
+		this.selectionCanvasToggleTime = 300;
 
 		this.altitudeIncrement = this.mapper.metersToUnits(5);
 
@@ -144,6 +146,9 @@ class RenderContext {
 		this.mapper.hooks.add("translateNodes", (nodeRefs) => this.recalculateNodesTranslate(nodeRefs));
 		this.mapper.hooks.add("update", this.requestUpdateSelection.bind(this));
 
+		this.wasActivity = false;
+		this.lastActivity = performance.now();
+		this.lastActivityTimeout = 300;
 
 		this.brushbar = new Brushbar(this);
 
@@ -384,9 +389,18 @@ class RenderContext {
 		window.requestAnimationFrame(this.redrawLoop.bind(this));
 		setTimeout(this.recalculateLoop.bind(this), 10);
 		setTimeout(this.recalculateSelection.bind(this), 10);
+		setTimeout(this.toggleSelectionCanvas.bind(this), this.selectionCanvasToggleTime);
 
 		this.changeBrush(this.brushes.add);
 		this.setCurrentLayer(this.getCurrentLayer());
+	}
+
+	toggleSelectionCanvas() {
+		this.drawSelectionCanvas = !this.drawSelectionCanvas;
+		this.requestRedraw();
+		if(this.alive) {
+			setTimeout(this.toggleSelectionCanvas.bind(this), this.selectionCanvasToggleTime);
+		}
 	}
 
 	pushInfoMessage(message) {
@@ -394,6 +408,10 @@ class RenderContext {
 			message: message,
 			when: performance.now(),
 		});
+
+		while(this.infoMessages.length > 10) {
+			this.infoMessages.pop(0);
+		}
 
 		this.requestRedraw();
 	}
@@ -460,6 +478,7 @@ class RenderContext {
 
 	setScrollOffset(value) {
 		this.scrollOffset = value;
+		this.lastActivity = performance.now();
 		this.recalculateEntireViewport();
 	}
 
@@ -474,6 +493,8 @@ class RenderContext {
 		this.brush = brush;
 		this.brush.switchTo();
 		this.hooks.call("changed_brush", brush);
+		this.requestRecheckSelection();
+		this.redrawSelection();
 		this.requestRedraw();
 	}
 
@@ -561,14 +582,14 @@ class RenderContext {
 								const nodeRef = part.nodeRef;
 								const point = part.absolutePoint.subtract(this.scrollOffset);
 
-								if(this.selection.hasNodeRef(nodeRef)) {
+								if(this.selection.hasNodeRef(nodeRef) &amp;&amp; this.brush.usesSelection()) {
 									sc.fillStyle = selectPattern;
 									sc.beginPath();
 									sc.arc(point.x, point.y, part.radius, 0, 2 * Math.PI, false);
 									sc.fill();
 								}
 
-								if(this.hoverSelection.hasNodeRef(nodeRef)) {
+								if(this.hoverSelection.hasNodeRef(nodeRef) &amp;&amp; this.brush.usesHover()) {
 									sc.fillStyle = hoverPattern;
 									sc.beginPath();
 									sc.arc(point.x, point.y, part.radius, 0, 2 * Math.PI, false);
@@ -589,11 +610,15 @@ class RenderContext {
 		this.hooks.call("selection_change", newSelection);
 	}
 
+	activity() {
+		return this.isAnyMouseButtonDown() || (performance.now() - this.lastActivity &lt; this.lastActivityTimeout);
+	}
+
 	async recalculateSelection() {
 		const oldHoverSelection = this.hoverSelection;
 		const oldSelection = this.selection;
 
-		if(this.wantRecheckSelection &amp;&amp; !this.isAnyMouseButtonDown()) {
+		if(this.wantRecheckSelection &amp;&amp; !this.activity()) {
 			this.wantRecheckSelection = false;
 
 			const closestNodePart = await this.getDrawnNodePartAtCanvasPoint(this.mousePosition, this.getCurrentLayer());
@@ -690,7 +715,11 @@ class RenderContext {
 	}
 
 	async buildBackgroundNodeCache(nodeRef) {
-		const box = Box3.fromRadius(await nodeRef.getCenter(), await nodeRef.getRadius());
+		const nodeType = await nodeRef.getType();
+		const nodePosition = await nodeRef.getCenter();
+
+		// We'll search for potential background nodes in a box around the node.
+		const box = Box3.fromRadius(nodePosition, await nodeRef.getRadius());
 		box.a.z = -Infinity;
 		box.b.z = Infinity;
 
@@ -705,37 +734,46 @@ class RenderContext {
 
 			const candidateType = await candidateNodeRef.getType();
 
-			if(candidateType.givesBackground()) {
+			// Only nodes of a different type than the original node can provide a background, and they must have a background to provide.
+			if(candidateType.id !== nodeType.id &amp;&amp; candidateType.hasBackground()) {
 				const candidateLayer = await candidateNodeRef.getLayer();
 				if(candidateLayer.id === layer.id) {
 					const center = (await candidateNodeRef.getEffectiveCenter());
-
 					candidates.push({
 						nodeRef: candidateNodeRef,
 						point: center.noZ(),
 						z: center.z,
 						radius: await candidateNodeRef.getRadius(),
+						givesBackground: candidateType.givesBackground(),
 					});
 				}
 			}
 		}
 
+		// Loop through the original NodeRef as well as all it's children.
 		for(const iterable of [[nodeRef], await asyncFrom(nodeRef.getChildren())]) {
 			for(const tryNodeRef of iterable) {
 				const tryCenter = (await tryNodeRef.getEffectiveCenter()).noZ();
 				let best = null;
-				let bestZ = null;
 
+				/* For this node, go through every candidate and select the "best".
+				 *
+				 * The best candidate to provide a background is, in order of importance:
+				 * 1. Of a node type that explicitly gives a background.
+				 * 2. Of a high z-level (i.e. on top).
+				 *
+				 * This allows for situations where no node explicitly gives a background for nodes on top to still inheirit background color,
+				 * and for stacks of nodes to always inheirit from the top-most node that does explicitly give a background.
+				 */
 				for(const candidate of candidates) {
 					if(candidate.point.subtract(tryCenter).length() &lt;= candidate.radius) {
-						if(!best || bestZ &lt; candidate.z) {
-							best = candidate.nodeRef;
-							bestZ = candidate.z;
+						if(!best || (candidate.z >= best.z &amp;&amp; (candidate.givesBackground || !best.givesBackground)) || (!best.givesBackground &amp;&amp; candidate.givesBackground)) {
+							best = candidate;
 						}
 					}
 				}
 
-				this.backgroundNodeCache[tryNodeRef.id] = best;
+				this.backgroundNodeCache[tryNodeRef.id] = best ? best.nodeRef : null;
 			}
 		}
 	}
@@ -750,6 +788,15 @@ class RenderContext {
 			this.scrollOffset = this.scrollOffset.add(this.mapPointToCanvas(oldLandmark).subtract(this.mapPointToCanvas(newLandmark)));
 			await this.hooks.call("changed_zoom", this.zoom);
 			this.recalculateEntireViewport();
+		}
+
+		const activity = this.activity();
+
+		if(this.wasActivity !== activity) {
+			if(!activity) {
+				this.recalculateEntireViewport();
+			}
+			this.wasActivity = activity;
 		}
 
 		const oldLength = this.infoMessages.length;
@@ -768,7 +815,7 @@ class RenderContext {
 		}
 
 		if(this.alive) {
-			setTimeout(this.recalculateLoop.bind(this), 100);
+			setTimeout(this.recalculateLoop.bind(this), 50);
 		}
 	}
 
@@ -1063,7 +1110,7 @@ class RenderContext {
 		for(const filter of filters) {
 			const focusTiles = {};
 
-			const drawLayer = async (layer, drawAgainIds) => {
+			const drawLayer = async (layer, drawAgainIds, callbacks) => {
 				const nodeId = layer.nodeRender.nodeRef.id;
 
 				const absoluteLayerBox = Box3.fromOffset(layer.corner, new Vector3(layer.width, layer.height, 0));
@@ -1091,25 +1138,30 @@ class RenderContext {
 							const realPointOnLayer = pointOnLayer.map(c => Math.max(c, 0));
 							const pointOnMegaTile = realPointOnLayer.subtract(pointOnLayer);
 
-							megaTile.context.drawImage(await layer.canvas(), realPointOnLayer.x, realPointOnLayer.y, megaTileSize, megaTileSize, pointOnMegaTile.x, pointOnMegaTile.y, megaTileSize, megaTileSize);
+							callbacks.push({
+								callback: async () => {
+									megaTile.context.drawImage(await layer.canvas(), realPointOnLayer.x, realPointOnLayer.y, megaTileSize, megaTileSize, pointOnMegaTile.x, pointOnMegaTile.y, megaTileSize, megaTileSize);
 
-							this.nodeIdsToMegatiles[nodeId].add(megaTile);
-							megaTile.nodeIds.add(nodeId);
-							megaTile.addParts(layer.parts);
+									this.nodeIdsToMegatiles[nodeId].add(megaTile);
+									megaTile.nodeIds.add(nodeId);
+									megaTile.addParts(layer.parts);
 
-							drewToMegaTiles.add(megaTile);
+									drewToMegaTiles.add(megaTile);
 
-							if(!layer.zWait) {
-								let averagePartPoint = Vector3.ZERO;
-								for(const part of layer.parts) {
-									averagePartPoint = averagePartPoint.add(part.absolutePoint);
-								}
+									if(!layer.zWait) {
+										let averagePartPoint = Vector3.ZERO;
+										for(const part of layer.parts) {
+											averagePartPoint = averagePartPoint.add(part.absolutePoint);
+										}
 
-								labelPositions[nodeId] = {
-									center: Vector3.max(Vector3.min(averagePartPoint.divideScalar(layer.parts.length), screenBox.b), screenBox.a),
-									size: Math.min(24, Math.ceil(this.unitsToPixels(await this.mapper.backend.getNodeRef(nodeId).getRadius()) / 4)),
-								};
-							}
+										labelPositions[nodeId] = {
+											center: Vector3.max(Vector3.min(averagePartPoint.divideScalar(layer.parts.length), screenBox.b), screenBox.a),
+											size: Math.min(24, Math.ceil(this.unitsToPixels(await this.mapper.backend.getNodeRef(nodeId).getRadius()) / 4)),
+										};
+									}
+								},
+								z: layer.z,
+							});
 						}
 
 						if(firstAppearanceInMegaTile &amp;&amp; drawAgainIds) {
@@ -1139,22 +1191,30 @@ class RenderContext {
 					const nodeRender = this.getNodeRender(nodeRef);
 					for(const layer of await nodeRender.getLayers(this.zoom)) {
 						layers.push(layer);
-						focusTileLists.add(layer.focusTiles);
+						if(!this.activity()) {
+							focusTileLists.add(layer.focusTiles);
+						}
 					}
 
 					if(this.nodeIdsToMegatiles[nodeId] === undefined)
 						this.nodeIdsToMegatiles[nodeId] = new Set();
 				}
 
-				layers.sort((a, b) => a.z - b.z);
+				const callbacks = [];
 
 				for(const layer of layers) {
 					if(layer.zWait) {
 						waitLayers.add(layer);
 					}
 					else {
-						await drawLayer(layer, drawAgainIds);
+						await drawLayer(layer, drawAgainIds, callbacks);
 					}
+				}
+
+				callbacks.sort((a, b) => a.z - b.z);
+
+				for(const callback of callbacks) {
+					await callback.callback();
 				}
 
 				for(const subFocusTiles of focusTileLists) {
@@ -1197,7 +1257,7 @@ class RenderContext {
 
 									for(const dirKey of dirKeys) {
 										const tileDir = dirs[dirKey].multiplyScalar(tileSize);
-										const neighborPoint = center.add(tileDir.divideScalar(2));
+										const neighborPoint = center.add(tileDir.divideScalar(2)).map(c => Math.floor(c)).map(c => c - c % 16);
 										const neighborNodePart = await this.getDrawnNodePartAtAbsoluteCanvasPointTileAligned(neighborPoint, tile.layer);
 										if(neighborNodePart) {
 											neighbors.push({
@@ -1232,8 +1292,16 @@ class RenderContext {
 				}
 			}
 
+			const callbacks = [];
+
 			for(const layer of waitLayers) {
-				drawLayer(layer);
+				drawLayer(layer, undefined, callbacks);
+			}
+
+			callbacks.sort((a, b) => a.z - b.z);
+
+			for(const callback of callbacks) {
+				await callback.callback();
 			}
 		}
 
@@ -1499,10 +1567,12 @@ class RenderContext {
 			}
 		}
 
-		c.globalAlpha = 0.25;
-		const offset = this.selectionCanvasScroll.subtract(this.scrollOffset);
-		c.drawImage(this.selectionCanvas, offset.x, offset.y);
-		c.globalAlpha = 1;
+		if(this.drawSelectionCanvas &amp;&amp; (this.brush.usesHover() || this.brush.usesSelection())) {
+			c.globalAlpha = 0.25;
+			const offset = this.selectionCanvasScroll.subtract(this.scrollOffset);
+			c.drawImage(this.selectionCanvas, offset.x, offset.y);
+			c.globalAlpha = 1;
+		}
 	}
 
 	async drawLabels() {
@@ -1929,7 +1999,7 @@ export { Mapper };
 <br class="clear">
 
 <footer>
-    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Sun Feb 05 2023 04:58:02 GMT+0000 (Coordinated Universal Time)
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 3.6.10</a> on Thu Feb 16 2023 03:48:49 GMT+0000 (Coordinated Universal Time)
 </footer>
 
 <script> prettyPrint(); </script>
