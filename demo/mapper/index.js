@@ -894,6 +894,7 @@ class HookContainer {
 	/** Register a function to be called upon a specific hook.
 	 * @param hookName {string} The name of the hook this method will be called on.
 	 * @param hookFunction {function} A function that will be called when the specified hook is called.
+	 * @returns {function} the function passed into the hook
 	 */
 	add(hookName, hookFunction) {
 		if(!(hookName in this.hooks)) {
@@ -901,6 +902,8 @@ class HookContainer {
 		}
 
 		this.hooks[hookName].push(hookFunction);
+
+		return hookFunction;
 	}
 
 	/** Remove a function from being called upon a specific hook.
@@ -1947,6 +1950,8 @@ class Brush {
 		this.sizeChangeRecentTimeout = 1000;
 
 		this.hooks = new HookContainer();
+
+		this.hooksToClear = [];
 	}
 
 	usesSelection() {
@@ -1973,6 +1978,11 @@ class Brush {
 
 	/** Called when the brush is switched to from another brush. */
 	switchTo() {
+		for(const hook of this.hooksToClear.splice(0, this.hooksToClear.length)) {
+			const k = hook[0];
+			const f = hook[1];
+			this.hooks.remove(k, f);
+		}
 		this.lastSizeChange = performance.now();
 	}
 
@@ -3421,7 +3431,7 @@ class AddBrush extends Brush {
 			this.setNodeTypeIndex(0);
 		};
 
-		this.hooks.add("context_current_layer_change", (layer) => reset(layer));
+		this.context.hooks.add("current_layer_change", (layer) => reset(layer));
 	}
 
 	usesHover() {
@@ -3552,8 +3562,8 @@ class AddBrush extends Brush {
 		};
 
 		await make(this.context.getCurrentLayer());
-		this.hooks.add("context_current_layer_change", async (layer) => await make(layer));
-		this.hooks.add("type_changed", async () => await make(this.context.getCurrentLayer()));
+		this.hooksToClear.push(["context_current_layer_change", this.hooks.add("context_current_layer_change", async (layer) => await make(layer))]);
+		this.hooksToClear.push(["type_changed", this.hooks.add("type_changed", async () => await make(this.context.getCurrentLayer()))]);
 	}
 
 	setNodeTypeIndex(index) {
@@ -4471,6 +4481,95 @@ class Brushbar {
 		const zoomLabel = document.createElement("span");
 		this.element.appendChild(zoomLabel);
 
+		let zoomLevelInput;
+
+		{
+			const zoomLevelLabel = document.createElement("div");
+			zoomLevelLabel.innerText = "Zoom level:";
+			this.element.appendChild(zoomLevelLabel);
+
+			const zoomLevelRow = document.createElement("div");
+			zoomLevelRow.setAttribute("class", "mapper1024_property_row");
+			this.element.appendChild(zoomLevelRow);
+
+			zoomLevelInput = document.createElement("input");
+
+			const zoomLevelSubmit = () => {
+				this.context.requestZoomChange(zoomLevelInput.value);
+			};
+
+			zoomLevelInput.setAttribute("class", "mapper1024_property_number");
+			zoomLevelInput.setAttribute("type", "number");
+			zoomLevelInput.setAttribute("min", "1");
+			zoomLevelInput.addEventListener("keyup", (event) => {
+				if(event.key === "Enter") {
+					zoomLevelSubmit();
+					event.preventDefault();
+					this.context.focus();
+				}
+			});
+			zoomLevelInput.addEventListener("change", () => {
+				zoomLevelSubmit();
+				this.context.focus();
+			});
+			zoomLevelRow.appendChild(zoomLevelInput);
+
+			const zoomLevelButton = document.createElement("button");
+			zoomLevelButton.innerText = "💾";
+			zoomLevelButton.onclick = () => {
+				zoomLevelSubmit();
+				this.context.focus();
+			};
+			zoomLevelRow.appendChild(zoomLevelButton);
+		}
+
+		let screenDiagonalInput;
+
+		{
+			const screenDiagonalLabel = document.createElement("div");
+			screenDiagonalLabel.innerText = "Screen diagonal (km):";
+			this.element.appendChild(screenDiagonalLabel);
+
+			const screenDiagonalRow = document.createElement("div");
+			screenDiagonalRow.setAttribute("class", "mapper1024_property_row");
+			this.element.appendChild(screenDiagonalRow);
+
+			screenDiagonalInput = document.createElement("input");
+
+			const screenDiagonalSubmit = () => {
+				const diagonalPixels = (new Vector3(0, 0, 0)).subtract(this.context.screenSize()).length();
+				const newZoom = this.context.unitsPerPixelToZoom(this.context.mapper.metersToUnits(screenDiagonalInput.value * 1000 / diagonalPixels));
+				this.context.requestZoomChange(newZoom);
+			};
+
+			screenDiagonalInput.setAttribute("class", "mapper1024_property_number");
+			screenDiagonalInput.setAttribute("type", "number");
+			screenDiagonalInput.setAttribute("min", "1");
+			screenDiagonalInput.setAttribute("step", 10);
+			screenDiagonalInput.addEventListener("keyup", (event) => {
+				if(event.key === "Enter") {
+					screenDiagonalSubmit();
+					event.preventDefault();
+					this.context.focus();
+				}
+			});
+			screenDiagonalInput.addEventListener("change", () => {
+				screenDiagonalSubmit();
+				this.context.focus();
+			});
+			screenDiagonalRow.appendChild(screenDiagonalInput);
+
+			const screenDiagonalButton = document.createElement("button");
+			screenDiagonalButton.innerText = "💾";
+			screenDiagonalButton.onclick = () => {
+				screenDiagonalSubmit();
+				this.context.focus();
+			};
+			screenDiagonalRow.appendChild(screenDiagonalButton);
+		}
+
+		//const screenDiagonalZoomInput;
+
 		const zoomRow = document.createElement("div");
 		zoomRow.setAttribute("class", "mapper1024_zoom_row");
 		this.element.appendChild(zoomRow);
@@ -4519,12 +4618,15 @@ class Brushbar {
 					if(this.context.inNormalMode()) {
 						size.innerText = `Brush radius ${Math.floor(brush.sizeInMeters() + 0.5)}m`;
 					}
-					zoomLabel.innerText = `Zoom ${this.context.requestedZoom}/${this.context.maxZoom}\n1px = ${this.context.mapper.unitsToMeters(this.context.zoomFactor(this.context.requestedZoom)).toFixed(2)}m`;
+					zoomLevelInput.value = this.context.requestedZoom;
+					screenDiagonalInput.value = Math.ceil((this.context.mapper.unitsToMeters(this.context.zoomFactor(this.context.requestedZoom) * (new Vector3(0, 0, 0)).subtract(this.context.screenSize()).length()) / 1000));
+					zoomLabel.innerText = `1px = ${this.context.mapper.unitsToMeters(this.context.zoomFactor(this.context.requestedZoom)).toFixed(2)}km`;
 				}
 			};
 
 			updateSize(this.context.brush);
 
+			this.context.hooks.add("size_change", () => updateSize(this.context.brush));
 			this.context.hooks.add("brush_size_change", updateSize);
 			this.context.hooks.add("changed_brush", updateSize);
 			this.context.hooks.add("changed_zoom", () => updateSize(this.context.brush));
@@ -4922,13 +5024,14 @@ function style() {
 
 .mapper1024_property_row > input {
 	flex: 3 1 0;
+	width: 3em;
 }
 	`;
 	return styleElement;
 }
 
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.6.1";
+let version = "0.6.2";
 
 /** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
@@ -4987,7 +5090,6 @@ class RenderContext {
 
 		this.scrollOffset = Vector3.ZERO;
 		this.defaultZoom = 5;
-		this.maxZoom = 30;
 		this.zoom = this.defaultZoom;
 		this.requestedZoom = this.zoom;
 		this.lastZoomRequest = 0;
@@ -5457,7 +5559,7 @@ class RenderContext {
 
 	requestZoomChange(zoom) {
 		if(this.requestedZoom !== zoom) {
-			this.requestedZoom = Math.max(1, Math.min(zoom, this.maxZoom));
+			this.requestedZoom = Math.max(1, zoom);
 			this.lastZoomRequest = performance.now();
 			this.requestRedraw();
 			this.hooks.call("requested_zoom", zoom);
@@ -5889,6 +5991,10 @@ class RenderContext {
 	 */
 	zoomFactor(zoom) {
 		return zoom / (1 + 20 / zoom);
+	}
+
+	unitsPerPixelToZoom(unitsPerPixel) {
+		return Math.ceil((unitsPerPixel + Math.sqrt((unitsPerPixel ** 2) + 80 * unitsPerPixel)) / 2);
 	}
 
 	pixelsToUnits(pixels) {
@@ -6597,9 +6703,10 @@ class RenderContext {
 		const pixelToMeters = this.mapper.unitsToMeters(this.zoomFactor(this.requestedZoom));
 
 		const lines = [
-			`Zoom ${this.requestedZoom} / ${this.maxZoom}`,
+			`Zoom ${this.requestedZoom}`,
 			`1px = ${pixelToMeters.toFixed(2)}m`,
 			`Brush diameter ${(pixelToMeters * this.brush.getRadius()).toFixed(2)}m`,
+			`Screen diagonal ${(this.mapper.unitsToMeters(this.zoomFactor(this.requestedZoom) * (new Vector3(0, 0, 0)).subtract(this.screenSize()).length()) / 1000).toFixed(2)}km`,
 			"Click to apply",
 		];
 
