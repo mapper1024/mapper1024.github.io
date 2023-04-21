@@ -268,6 +268,14 @@ class Box3 {
 
 		return true;
 	}
+
+	normalize() {
+		return new Box3(Vector3.min(this.a, this.b), Vector3.max(this.a, this.b));
+	}
+
+	size() {
+		return this.b.subtract(this.a);
+	}
 }
 
 /** A set of connected vertices */
@@ -886,6 +894,7 @@ class HookContainer {
 	/** Register a function to be called upon a specific hook.
 	 * @param hookName {string} The name of the hook this method will be called on.
 	 * @param hookFunction {function} A function that will be called when the specified hook is called.
+	 * @returns {function} the function passed into the hook
 	 */
 	add(hookName, hookFunction) {
 		if(!(hookName in this.hooks)) {
@@ -893,6 +902,8 @@ class HookContainer {
 		}
 
 		this.hooks[hookName].push(hookFunction);
+
+		return hookFunction;
 	}
 
 	/** Remove a function from being called upon a specific hook.
@@ -1939,6 +1950,8 @@ class Brush {
 		this.sizeChangeRecentTimeout = 1000;
 
 		this.hooks = new HookContainer();
+
+		this.hooksToClear = [];
 	}
 
 	usesSelection() {
@@ -1965,6 +1978,11 @@ class Brush {
 
 	/** Called when the brush is switched to from another brush. */
 	switchTo() {
+		for(const hook of this.hooksToClear.splice(0, this.hooksToClear.length)) {
+			const k = hook[0];
+			const f = hook[1];
+			this.hooks.remove(k, f);
+		}
 		this.lastSizeChange = performance.now();
 	}
 
@@ -2119,6 +2137,18 @@ class Action {
 	async perform() {
 		throw "perform not implemented";
 	}
+}
+
+class NullAction extends Action {
+	constructor(context) {
+		super(context, {});
+	}
+
+	empty() {
+		return true;
+	}
+
+	async perform() {}
 }
 
 /** An action composed of several actions. Will handle creating the needed bulk action to undo the actions in order.
@@ -3401,7 +3431,7 @@ class AddBrush extends Brush {
 			this.setNodeTypeIndex(0);
 		};
 
-		this.hooks.add("context_current_layer_change", (layer) => reset(layer));
+		this.context.hooks.add("current_layer_change", (layer) => reset(layer));
 	}
 
 	usesHover() {
@@ -3532,8 +3562,8 @@ class AddBrush extends Brush {
 		};
 
 		await make(this.context.getCurrentLayer());
-		this.hooks.add("context_current_layer_change", async (layer) => await make(layer));
-		this.hooks.add("type_changed", async () => await make(this.context.getCurrentLayer()));
+		this.hooksToClear.push(["context_current_layer_change", this.hooks.add("context_current_layer_change", async (layer) => await make(layer))]);
+		this.hooksToClear.push(["type_changed", this.hooks.add("type_changed", async () => await make(this.context.getCurrentLayer()))]);
 	}
 
 	setNodeTypeIndex(index) {
@@ -4049,8 +4079,30 @@ class DistancePegBrush extends Brush {
 		context.fillText(positionText, position.x - context.measureText(positionText).width / 2, position.y + 16);
 	}
 
+	async displaySidebar(brushbar, container) {
+		const make = async () => {
+			const a = this.context.distanceMarkers[1];
+			const b = this.context.distanceMarkers[2];
+
+			if(a && b) {
+				const meters = this.context.mapper.unitsToMeters(a.subtract(b).length());
+				container.innerText = `Distance between markers: ${Math.floor(meters + 0.5)}m (${Math.floor(meters / 1000 + 0.5)}km)`;
+			}
+			else if(a || b) {
+				container.innerText = "Place the other marker to calculate distance";
+			}
+			else {
+				container.innerText = "Place the first marker to calculate distance";
+			}
+		};
+
+		await make();
+		this.hooks.add("context_distance_marker_update", make);
+	}
+
 	async activate(where) {
 		this.context.distanceMarkers[this.n] = this.context.canvasPointToMap(where);
+		this.context.hooks.call("distance_marker_update", this.n, where);
 	}
 }
 
@@ -4272,6 +4324,65 @@ class SelectBrush extends Brush {
 	}
 }
 
+class RectangleSelectBrush extends Brush {
+	constructor(context) {
+		super(context);
+
+		this.box = undefined;
+	}
+
+	async draw(context, where) {
+		context.beginPath();
+		context.arc(where.x, where.y, 4, 0, 2 * Math.PI, false);
+		context.fillStyle = "white";
+		context.fill();
+
+		if(this.box) {
+			const boxOnCanvas = this.box.map(v => this.context.mapPointToCanvas(v));
+			const boxSize = boxOnCanvas.b.subtract(boxOnCanvas.a);
+			context.globalAlpha = 0.5;
+			context.fillStyle = "black";
+			context.fillRect(boxOnCanvas.a.x, boxOnCanvas.a.y, boxSize.x, boxSize.y);
+			context.globalAlpha = 1;
+		}
+	}
+
+	absoluteCanvasBox() {
+		return this.box.map(v => this.context.mapPointToAbsoluteCanvas(v).map(c => Math.floor(c)));
+	}
+
+	async displaySidebar(brushbar, container) {
+		const make = async () => {
+			if(this.box) {
+				const meterBox = this.box.map(v => v.map(c => this.context.mapper.unitsToMeters(c)));
+				const absoluteCanvasBox = this.absoluteCanvasBox();
+				container.innerText = `${absoluteCanvasBox.size().x}x${absoluteCanvasBox.size().y} pixels at zoom level ${this.context.zoom}\n${(meterBox.size().x / 1000 * meterBox.size().y / 1000).toFixed(2)} km²`;
+			}
+			else {
+				container.innerText = "Click and drag to select an area to export";
+			}
+		};
+
+		await make();
+		this.hooks.add("change_box", make);
+		this.hooks.add("context_changed_zoom", make);
+	}
+
+	async trigger(drawEvent) {
+		const startOnMap = this.context.canvasPointToMap(drawEvent.path.origin);
+		const whereOnMap = this.context.canvasPointToMap(drawEvent.path.lastVertex());
+		this.box = (new Box3(startOnMap, whereOnMap)).normalize();
+		this.hooks.call("change_box", this.box);
+		return new NullAction(this.context);
+	}
+
+	async activate(where) {
+		const whereOnMap = this.context.canvasPointToMap(where);
+		this.box = new Box3(whereOnMap, whereOnMap);
+		return new DrawEvent(this.context, where);
+	}
+}
+
 class PanEvent extends DragEvent {
 	next(nextPoint) {
 		super.next(nextPoint);
@@ -4302,50 +4413,162 @@ class Brushbar {
 
 		this.element.appendChild(document.createElement("hr"));
 
-		const undoRow = document.createElement("div");
-		undoRow.setAttribute("class", "mapper1024_zoom_row");
-		this.element.appendChild(undoRow);
+		if(this.context.inNormalMode()) {
+			const exportButton = document.createElement("button");
+			exportButton.setAttribute("class", "mapper1024_zoom_button");
+			exportButton.setAttribute("title", "Export [shortcut: Control+e]");
+			exportButton.innerText = "📷 Export as image...";
+			exportButton.onclick = () => {
+				this.context.openExportModal();
+			};
+			this.element.appendChild(exportButton);
 
-		const undo = document.createElement("button");
-		undo.setAttribute("class", "mapper1024_zoom_button");
-		undo.innerText = "⟲";
-		undo.setAttribute("title", "Undo [shortcut: Control+z]");
-		undo.onclick = async () => {
-			await this.context.undo();
-			this.context.focus();
-		};
-		undoRow.appendChild(undo);
+			this.element.appendChild(document.createElement("hr"));
+		}
 
-		const undoStatus = document.createElement("span");
-		undoRow.appendChild(undoStatus);
+		if(this.context.inNormalMode()) {
+			const undoRow = document.createElement("div");
+			undoRow.setAttribute("class", "mapper1024_zoom_row");
+			this.element.appendChild(undoRow);
 
-		const redo = document.createElement("button");
-		redo.setAttribute("class", "mapper1024_zoom_button");
-		redo.innerText = "⟳";
-		redo.setAttribute("title", "Redo [shortcut: Control+y]");
-		redo.onclick = async () => {
-			await this.context.redo();
-			this.context.focus();
-		};
-		undoRow.appendChild(redo);
+			const undo = document.createElement("button");
+			undo.setAttribute("class", "mapper1024_zoom_button");
+			undo.innerText = "⟲ Undo";
+			undo.setAttribute("title", "Undo [shortcut: Control+z]");
+			undo.onclick = async () => {
+				await this.context.undo();
+				this.context.focus();
+			};
+			undoRow.appendChild(undo);
 
-		const updateUndoStatus = () => {
-			undoStatus.innerText = `${this.context.undoStack.length} --- ${this.context.redoStack.length}`;
-			undo.disabled = this.context.undoStack.length === 0;
-			redo.disabled = this.context.redoStack.length === 0;
-		};
+			const undoStatus = document.createElement("span");
+			undoRow.appendChild(undoStatus);
 
-		this.context.hooks.add("undid", updateUndoStatus);
-		this.context.hooks.add("redid", updateUndoStatus);
-		this.context.hooks.add("action", updateUndoStatus);
-		this.context.hooks.add("undo_pushed", updateUndoStatus);
-		this.context.hooks.add("do_stripped", updateUndoStatus);
-		updateUndoStatus();
+			const separator = document.createElement("span");
+			separator.innerText = "|";
+			undoRow.appendChild(separator);
 
-		this.element.appendChild(document.createElement("hr"));
+			const redoStatus = document.createElement("span");
+			undoRow.appendChild(redoStatus);
+
+			const redo = document.createElement("button");
+			redo.setAttribute("class", "mapper1024_zoom_button");
+			redo.innerText = "⟳ Redo";
+			redo.setAttribute("title", "Redo [shortcut: Control+y]");
+			redo.onclick = async () => {
+				await this.context.redo();
+				this.context.focus();
+			};
+			undoRow.appendChild(redo);
+
+			const updateUndoStatus = () => {
+				undoStatus.innerText = `${this.context.undoStack.length}`;
+				redoStatus.innerText = `${this.context.redoStack.length}`;
+				undo.disabled = this.context.undoStack.length === 0;
+				redo.disabled = this.context.redoStack.length === 0;
+			};
+
+			this.context.hooks.add("undid", updateUndoStatus);
+			this.context.hooks.add("redid", updateUndoStatus);
+			this.context.hooks.add("action", updateUndoStatus);
+			this.context.hooks.add("undo_pushed", updateUndoStatus);
+			this.context.hooks.add("do_stripped", updateUndoStatus);
+			updateUndoStatus();
+
+			this.element.appendChild(document.createElement("hr"));
+		}
 
 		const zoomLabel = document.createElement("span");
 		this.element.appendChild(zoomLabel);
+
+		let zoomLevelInput;
+
+		{
+			const zoomLevelLabel = document.createElement("div");
+			zoomLevelLabel.innerText = "Zoom level:";
+			this.element.appendChild(zoomLevelLabel);
+
+			const zoomLevelRow = document.createElement("div");
+			zoomLevelRow.setAttribute("class", "mapper1024_property_row");
+			this.element.appendChild(zoomLevelRow);
+
+			zoomLevelInput = document.createElement("input");
+
+			const zoomLevelSubmit = () => {
+				this.context.requestZoomChange(zoomLevelInput.value);
+			};
+
+			zoomLevelInput.setAttribute("class", "mapper1024_property_number");
+			zoomLevelInput.setAttribute("type", "number");
+			zoomLevelInput.setAttribute("min", "1");
+			zoomLevelInput.addEventListener("keyup", (event) => {
+				if(event.key === "Enter") {
+					zoomLevelSubmit();
+					event.preventDefault();
+					this.context.focus();
+				}
+			});
+			zoomLevelInput.addEventListener("change", () => {
+				zoomLevelSubmit();
+				this.context.focus();
+			});
+			zoomLevelRow.appendChild(zoomLevelInput);
+
+			const zoomLevelButton = document.createElement("button");
+			zoomLevelButton.innerText = "💾";
+			zoomLevelButton.onclick = () => {
+				zoomLevelSubmit();
+				this.context.focus();
+			};
+			zoomLevelRow.appendChild(zoomLevelButton);
+		}
+
+		let screenDiagonalInput;
+
+		{
+			const screenDiagonalLabel = document.createElement("div");
+			screenDiagonalLabel.innerText = "Screen diagonal (km):";
+			this.element.appendChild(screenDiagonalLabel);
+
+			const screenDiagonalRow = document.createElement("div");
+			screenDiagonalRow.setAttribute("class", "mapper1024_property_row");
+			this.element.appendChild(screenDiagonalRow);
+
+			screenDiagonalInput = document.createElement("input");
+
+			const screenDiagonalSubmit = () => {
+				const diagonalPixels = (new Vector3(0, 0, 0)).subtract(this.context.screenSize()).length();
+				const newZoom = this.context.unitsPerPixelToZoom(this.context.mapper.metersToUnits(screenDiagonalInput.value * 1000 / diagonalPixels));
+				this.context.requestZoomChange(newZoom);
+			};
+
+			screenDiagonalInput.setAttribute("class", "mapper1024_property_number");
+			screenDiagonalInput.setAttribute("type", "number");
+			screenDiagonalInput.setAttribute("min", "1");
+			screenDiagonalInput.setAttribute("step", 10);
+			screenDiagonalInput.addEventListener("keyup", (event) => {
+				if(event.key === "Enter") {
+					screenDiagonalSubmit();
+					event.preventDefault();
+					this.context.focus();
+				}
+			});
+			screenDiagonalInput.addEventListener("change", () => {
+				screenDiagonalSubmit();
+				this.context.focus();
+			});
+			screenDiagonalRow.appendChild(screenDiagonalInput);
+
+			const screenDiagonalButton = document.createElement("button");
+			screenDiagonalButton.innerText = "💾";
+			screenDiagonalButton.onclick = () => {
+				screenDiagonalSubmit();
+				this.context.focus();
+			};
+			screenDiagonalRow.appendChild(screenDiagonalButton);
+		}
+
+		//const screenDiagonalZoomInput;
 
 		const zoomRow = document.createElement("div");
 		zoomRow.setAttribute("class", "mapper1024_zoom_row");
@@ -4383,107 +4606,119 @@ class Brushbar {
 
 		this.element.appendChild(document.createElement("hr"));
 
-		const size = document.createElement("span");
-		this.element.appendChild(size);
+		if(this.context.inControlledMode()) {
+			const size = document.createElement("span");
 
-		const updateSize = (brush) => {
-			if(brush === this.context.brush) {
-				size.innerText = `Brush radius ${Math.floor(brush.sizeInMeters() + 0.5)}m`;
-				zoomLabel.innerText = `Zoom ${this.context.requestedZoom}/${this.context.maxZoom}\n1px = ${this.context.mapper.unitsToMeters(this.context.zoomFactor(this.context.requestedZoom)).toFixed(2)}m`;
+			if(this.context.inNormalMode()) {
+				this.element.appendChild(size);
 			}
-		};
 
-		updateSize(this.context.brush);
-
-		this.element.appendChild(document.createElement("br"));
-
-		this.context.hooks.add("brush_size_change", updateSize);
-		this.context.hooks.add("changed_brush", updateSize);
-		this.context.hooks.add("changed_zoom", () => updateSize(this.context.brush));
-		this.context.hooks.add("requested_zoom", () => updateSize(this.context.brush));
-
-		const brushSizeRow = document.createElement("div");
-		brushSizeRow.setAttribute("class", "mapper1024_zoom_row");
-		this.element.appendChild(brushSizeRow);
-
-		const sizeUp = document.createElement("button");
-		sizeUp.setAttribute("class", "mapper1024_brush_size_button");
-		sizeUp.innerText = "+";
-		sizeUp.setAttribute("title", "Increase brush size [shortcut: Hold 'w' and scroll up]");
-		sizeUp.onclick = () => {
-			this.context.brush.enlarge();
-			this.context.requestRedraw();
-			this.context.focus();
-		};
-		brushSizeRow.appendChild(sizeUp);
-
-		const sizeDown = document.createElement("button");
-		sizeDown.setAttribute("class", "mapper1024_brush_size_button");
-		sizeDown.innerText = "-";
-		sizeDown.setAttribute("title", "Decrease brush size [shortcut: Hold 'w' and scroll down]");
-		sizeDown.onclick = () => {
-			this.context.brush.shrink();
-			this.context.requestRedraw();
-			this.context.focus();
-		};
-		brushSizeRow.appendChild(sizeDown);
-
-		this.element.appendChild(document.createElement("hr"));
-
-		const brushButtonContainer = document.createElement("div");
-		brushButtonContainer.setAttribute("class", "mapper1024_brush_button_container");
-		this.element.appendChild(brushButtonContainer);
-
-		const brushButton = (brush) => {
-			const button = document.createElement("button");
-			button.setAttribute("class", "mapper1024_brush_button");
-			brush.displayButton(button);
-			button.onclick = () => {
-				this.context.changeBrush(brush);
-				this.context.focus();
+			const updateSize = (brush) => {
+				if(brush === this.context.brush) {
+					if(this.context.inNormalMode()) {
+						size.innerText = `Brush radius ${Math.floor(brush.sizeInMeters() + 0.5)}m`;
+					}
+					zoomLevelInput.value = this.context.requestedZoom;
+					screenDiagonalInput.value = Math.ceil((this.context.mapper.unitsToMeters(this.context.zoomFactor(this.context.requestedZoom) * (new Vector3(0, 0, 0)).subtract(this.context.screenSize()).length()) / 1000));
+					zoomLabel.innerText = `1px = ${this.context.mapper.unitsToMeters(this.context.zoomFactor(this.context.requestedZoom)).toFixed(2)}km`;
+				}
 			};
 
-			this.context.hooks.add("changed_brush", (newBrush) => {
-				button.style["font-weight"] = brush === newBrush ? "bold" : "normal";
-			});
+			updateSize(this.context.brush);
 
-			return button;
-		};
+			this.context.hooks.add("size_change", () => updateSize(this.context.brush));
+			this.context.hooks.add("brush_size_change", updateSize);
+			this.context.hooks.add("changed_brush", updateSize);
+			this.context.hooks.add("changed_zoom", () => updateSize(this.context.brush));
+			this.context.hooks.add("requested_zoom", () => updateSize(this.context.brush));
 
-		for(const brushName in this.context.brushes) {
-			const button = brushButton(this.context.brushes[brushName]);
-			brushButtonContainer.appendChild(button);
+			if(this.context.inNormalMode()) {
+				this.element.appendChild(document.createElement("br"));
+
+				const brushSizeRow = document.createElement("div");
+				brushSizeRow.setAttribute("class", "mapper1024_zoom_row");
+				this.element.appendChild(brushSizeRow);
+
+				const sizeUp = document.createElement("button");
+				sizeUp.setAttribute("class", "mapper1024_brush_size_button");
+				sizeUp.innerText = "+";
+				sizeUp.setAttribute("title", "Increase brush size [shortcut: Hold 'w' and scroll up]");
+				sizeUp.onclick = () => {
+					this.context.brush.enlarge();
+					this.context.requestRedraw();
+					this.context.focus();
+				};
+				brushSizeRow.appendChild(sizeUp);
+
+				const sizeDown = document.createElement("button");
+				sizeDown.setAttribute("class", "mapper1024_brush_size_button");
+				sizeDown.innerText = "-";
+				sizeDown.setAttribute("title", "Decrease brush size [shortcut: Hold 'w' and scroll down]");
+				sizeDown.onclick = () => {
+					this.context.brush.shrink();
+					this.context.requestRedraw();
+					this.context.focus();
+				};
+				brushSizeRow.appendChild(sizeDown);
+
+				this.element.appendChild(document.createElement("hr"));
+
+				const brushButtonContainer = document.createElement("div");
+				brushButtonContainer.setAttribute("class", "mapper1024_brush_button_container");
+				this.element.appendChild(brushButtonContainer);
+
+				const brushButton = (brush) => {
+					const button = document.createElement("button");
+					button.setAttribute("class", "mapper1024_brush_button");
+					brush.displayButton(button);
+					button.onclick = () => {
+						this.context.changeBrush(brush);
+						this.context.focus();
+					};
+
+					this.context.hooks.add("changed_brush", (newBrush) => {
+						button.style["font-weight"] = brush === newBrush ? "bold" : "normal";
+					});
+
+					return button;
+				};
+
+				for(const brushName in this.context.brushes) {
+					const button = brushButton(this.context.brushes[brushName]);
+					brushButtonContainer.appendChild(button);
+				}
+
+				this.element.appendChild(document.createElement("hr"));
+
+				const layerButtonContainer = document.createElement("div");
+				layerButtonContainer.setAttribute("class", "mapper1024_brush_button_container");
+				this.element.appendChild(layerButtonContainer);
+
+				const layerButton = (layer) => {
+					const button = document.createElement("button");
+					button.setAttribute("class", "mapper1024_brush_button");
+					button.innerText = layer.getDescription();
+					button.title = `Switch to the ${layer.getDescription()} layer [shortcut: 'l']`;
+					button.onclick = () => {
+						this.context.setCurrentLayer(layer);
+						this.context.focus();
+					};
+
+					this.context.hooks.add("current_layer_change", (newLayer) => {
+						button.style["font-weight"] = layer.id === newLayer.id ? "bold" : "normal";
+					});
+
+					return button;
+				};
+
+				for(const layer of this.context.mapper.backend.layerRegistry.getLayers()) {
+					const button = layerButton(layer);
+					layerButtonContainer.appendChild(button);
+				}
+
+				this.element.appendChild(document.createElement("hr"));
+			}
 		}
-
-		this.element.appendChild(document.createElement("hr"));
-
-		const layerButtonContainer = document.createElement("div");
-		layerButtonContainer.setAttribute("class", "mapper1024_brush_button_container");
-		this.element.appendChild(layerButtonContainer);
-
-		const layerButton = (layer) => {
-			const button = document.createElement("button");
-			button.setAttribute("class", "mapper1024_brush_button");
-			button.innerText = layer.getDescription();
-			button.title = `Switch to the ${layer.getDescription()} layer [shortcut: 'l']`;
-			button.onclick = () => {
-				this.context.setCurrentLayer(layer);
-				this.context.focus();
-			};
-
-			this.context.hooks.add("current_layer_change", (newLayer) => {
-				button.style["font-weight"] = layer.id === newLayer.id ? "bold" : "normal";
-			});
-
-			return button;
-		};
-
-		for(const layer of this.context.mapper.backend.layerRegistry.getLayers()) {
-			const button = layerButton(layer);
-			layerButtonContainer.appendChild(button);
-		}
-
-		this.element.appendChild(document.createElement("hr"));
 
 		this.brushStrip = document.createElement("span");
 
@@ -4517,7 +4752,7 @@ class Brushbar {
 
 		const actualXSize = size.x + (this.element.offsetWidth - this.element.clientWidth);
 
-		const where = new Vector3(screenSize.x - actualXSize - hPadding, padding, 0);
+		const where = new Vector3(screenSize.x - actualXSize - hPadding - this.context.canvasOffset().x, padding + this.context.canvasOffset().y, 0);
 		this.element.style.left = `${where.x}px`;
 		this.element.style.top = `${where.y}px`;
 
@@ -4528,6 +4763,103 @@ class Brushbar {
 
 	disconnect() {
 		this.element.remove();
+	}
+}
+
+class ExportUI {
+	constructor(context) {
+		this.context = context;
+		this.hooks = new HookContainer();
+	}
+
+	async show() {
+		this.previewMapper = this.context.mapper.render(this.context.parent, {
+			mode: "preview",
+		});
+
+		this.exportBrush = new RectangleSelectBrush(this.previewMapper);
+		this.previewMapper.changeBrush(this.exportBrush);
+
+		const systemButtons = document.createElement("div");
+		systemButtons.setAttribute("class", "mapper1024_zoom_row");
+		this.previewMapper.brushbar.setSystemButtons(systemButtons);
+
+		const exportButton = document.createElement("button");
+		exportButton.setAttribute("class", "mapper1024_zoom_button");
+		exportButton.setAttribute("title", "Export [Shortcut: Enter]");
+		exportButton.innerText = "📷 Export...";
+		exportButton.disabled = true;
+		exportButton.onclick = async () => {
+			await this.exportImage();
+		};
+		systemButtons.appendChild(exportButton);
+
+		this.exportBrush.hooks.add("change_box", async (box) => {
+			exportButton.disabled = !box;
+		});
+
+		const cancelButton = document.createElement("button");
+		cancelButton.setAttribute("class", "mapper1024_zoom_button");
+		cancelButton.setAttribute("title", "Cancel [shortcut: Escape]");
+		cancelButton.innerText = "🗙 Cancel";
+		cancelButton.onclick = () => {
+			this.close();
+		};
+		systemButtons.appendChild(cancelButton);
+
+		this.previewMapper.registerKeyboardShortcut((context, event) => event.key === "Escape", async () => this.close());
+		this.previewMapper.registerKeyboardShortcut((context, event) => event.key === "Enter" && !exportButton.disabled, async () => await this.exportImage());
+
+		this.previewMapper.setScrollOffset(this.context.scrollOffset);
+		await this.previewMapper.forceZoom(this.context.zoom);
+
+		this.previewMapper.focus();
+
+		return new Promise((resolve) => {
+			this.hooks.add("closed", resolve);
+		});
+	}
+
+	async exportImage() {
+		const box = this.exportBrush.absoluteCanvasBox();
+
+		const exportMapper = this.context.mapper.render(document.createElement("div"), {
+			mode: "export",
+			exportBox: box,
+		});
+
+		await exportMapper.forceZoom(this.previewMapper.zoom);
+		exportMapper.setScrollOffset(box.a);
+
+		let calculated = false;
+
+		await new Promise((resolve) => {
+			exportMapper.hooks.add("calculated", () => {
+				if(exportMapper.zoom === this.previewMapper.zoom) {
+					calculated = true;
+				}
+			});
+
+			exportMapper.hooks.add("drawn", () => {
+				if(calculated) {
+					resolve();
+				}
+			});
+		});
+
+		const a = document.createElement("a");
+		a.href = exportMapper.canvas.toDataURL();
+		a.download = `Map export at ${new Date(Date.now()).toISOString()}.png`;
+		a.click();
+
+		exportMapper.disconnect();
+
+		this.close();
+	}
+
+	close() {
+		this.previewMapper.disconnect();
+		this.hooks.call("closed");
 	}
 }
 
@@ -4692,13 +5024,14 @@ function style() {
 
 .mapper1024_property_row > input {
 	flex: 3 1 0;
+	width: 3em;
 }
 	`;
 	return styleElement;
 }
 
 // Do not edit; automatically generated by tools/update_version.sh
-let version = "0.6.0";
+let version = "0.6.2";
 
 /** A render context of a mapper into a specific element.
  * Handles keeping the UI connected to an element on a page.
@@ -4709,9 +5042,13 @@ class RenderContext {
 	/** Construct the render context for the specified mapper in a specific parent element.
 	 * Will set up event listeners and build the initial UI.
 	 */
-	constructor(parent, mapper) {
+	constructor(parent, mapper, options) {
 		this.parent = parent;
 		this.mapper = mapper;
+
+		this.options = merge({
+			mode: "normal",
+		}, options);
 
 		this.alive = true;
 
@@ -4753,7 +5090,6 @@ class RenderContext {
 
 		this.scrollOffset = Vector3.ZERO;
 		this.defaultZoom = 5;
-		this.maxZoom = 30;
 		this.zoom = this.defaultZoom;
 		this.requestedZoom = this.zoom;
 		this.lastZoomRequest = 0;
@@ -4825,7 +5161,7 @@ class RenderContext {
 			}
 
 			if(this.mouseDragEvents[event.button] === undefined) {
-				const where = new Vector3(event.x, event.y, 0);
+				const where = this.mouseEventToCanvasPoint(event);
 
 				if(event.button === 0) {
 					const dragEvent = await this.brush.activate(where);
@@ -4845,7 +5181,7 @@ class RenderContext {
 		});
 
 		this.canvas.addEventListener("mouseup", async (event) => {
-			const where = new Vector3(event.x, event.y, 0);
+			const where = this.mouseEventToCanvasPoint(event);
 
 			this.endMouseButtonPress(event.button, where);
 			this.requestRedraw();
@@ -4853,7 +5189,7 @@ class RenderContext {
 
 		this.canvas.addEventListener("mousemove", async (event) => {
 			this.oldMousePosition = this.mousePosition;
-			this.mousePosition = new Vector3(event.x, event.y, 0);
+			this.mousePosition = this.mouseEventToCanvasPoint(event);
 
 			for(const button in this.mouseDragEvents) {
 				const mouseDragEvent = this.mouseDragEvents[button];
@@ -4880,113 +5216,138 @@ class RenderContext {
 					}
 				}
 			}
-			if(this.isKeyDown("Control")) {
-				if(event.key === "z") {
+
+			const handlePanKeys = async () => {
+				if(event.key === "ArrowUp") {
+					this.setScrollOffset(this.scrollOffset.subtract(new Vector3(0, this.screenSize().y / 3, 0)).round());
+					return true;
+				}
+				else if(event.key === "ArrowDown") {
+					this.setScrollOffset(this.scrollOffset.add(new Vector3(0, this.screenSize().y / 3, 0)).round());
+					return true;
+				}
+				else if(event.key === "ArrowLeft") {
+					this.setScrollOffset(this.scrollOffset.subtract(new Vector3(this.screenSize().x / 3, 0, 0)).round());
+					return true;
+				}
+				else if(event.key === "ArrowRight") {
+					this.setScrollOffset(this.scrollOffset.add(new Vector3(this.screenSize().x / 3, 0, 0)).round());
+					return true;
+				}
+			};
+
+			const handleOrientationKeys = async () => {
+				if(this.isKeyDown("Control")) {
+					if(event.key === "c") {
+						await this.resetOrientation();
+						return true;
+					}
+					else if(event.key === "=" || event.key === "+") {
+						this.requestZoomChangeDelta(-1);
+						event.preventDefault();
+						return true;
+					}
+					else if(event.key === "-") {
+						this.requestZoomChangeDelta(1);
+						event.preventDefault();
+						return true;
+					}
+				}
+			};
+
+			if(this.inPreviewMode()) {
+				if(await handlePanKeys());
+				else if(await handleOrientationKeys());
+			}
+			else if(this.inNormalMode()) {
+				if(await handlePanKeys());
+				else if(await handleOrientationKeys());
+				else if(this.isKeyDown("Control") && event.key === "z") {
 					await this.undo();
 				}
-				else if(event.key === "y") {
+				else if(this.isKeyDown("Control") && event.key === "y") {
 					await this.redo();
 				}
+				else if(this.isKeyDown("Control") && event.key === "e") {
+					this.openExportModal();
+				}
+				else if(event.key === "1") {
+					this.changeBrush(this.brushes.peg1);
+				}
+				else if(event.key === "2") {
+					this.changeBrush(this.brushes.peg2);
+				}
+				else if(event.key === "d") {
+					this.changeBrush(this.brushes["delete"]);
+				}
+				else if(event.key === "a") {
+					this.changeBrush(this.brushes.add);
+				}
+				else if(event.key === "e") {
+					this.changeBrush(this.brushes.extend);
+				}
+				else if(event.key === "s") {
+					this.changeBrush(this.brushes.select);
+				}
 				else if(event.key === "c") {
-					await this.resetOrientation();
+					this.changeBrush(this.brushes.area);
 				}
-				else if(event.key === "=" || event.key === "+") {
-					this.requestZoomChangeDelta(-1);
-					event.preventDefault();
+				else if(event.key === "C") {
+					if(this.brush === this.brushes.area) {
+						this.brushes.area.reset();
+					}
 				}
-				else if(event.key === "-") {
-					this.requestZoomChangeDelta(1);
-					event.preventDefault();
+				else if(event.key === "m") {
+					await this.performAction(new MergeAction(this, {nodeRefs: Array.from(this.selection.getOrigins())}), true);
 				}
-			}
-			else if(event.key === "ArrowUp") {
-				this.setScrollOffset(this.scrollOffset.subtract(new Vector3(0, this.screenSize().y / 3, 0)).round());
-			}
-			else if(event.key === "ArrowDown") {
-				this.setScrollOffset(this.scrollOffset.add(new Vector3(0, this.screenSize().y / 3, 0)).round());
-			}
-			else if(event.key === "ArrowLeft") {
-				this.setScrollOffset(this.scrollOffset.subtract(new Vector3(this.screenSize().x / 3, 0, 0)).round());
-			}
-			else if(event.key === "ArrowRight") {
-				this.setScrollOffset(this.scrollOffset.add(new Vector3(this.screenSize().x / 3, 0, 0)).round());
-			}
-			else if(event.key === "1") {
-				this.changeBrush(this.brushes.peg1);
-			}
-			else if(event.key === "2") {
-				this.changeBrush(this.brushes.peg2);
-			}
-			else if(event.key === "d") {
-				this.changeBrush(this.brushes["delete"]);
-			}
-			else if(event.key === "a") {
-				this.changeBrush(this.brushes.add);
-			}
-			else if(event.key === "e") {
-				this.changeBrush(this.brushes.extend);
-			}
-			else if(event.key === "s") {
-				this.changeBrush(this.brushes.select);
-			}
-			else if(event.key === "c") {
-				this.changeBrush(this.brushes.area);
-			}
-			else if(event.key === "C") {
-				if(this.brush === this.brushes.area) {
-					this.brushes.area.reset();
+				else if(event.key === "l") {
+					const layerArray = Array.from(this.mapper.backend.layerRegistry.getLayers());
+					const layerIdArray = layerArray.map(layer => layer.id);
+					this.setCurrentLayer(layerArray[(layerIdArray.indexOf(this.getCurrentLayer().id) + 1) % layerArray.length]);
 				}
-			}
-			else if(event.key === "m") {
-				await this.performAction(new MergeAction(this, {nodeRefs: Array.from(this.selection.getOrigins())}), true);
-			}
-			else if(event.key === "l") {
-				const layerArray = Array.from(this.mapper.backend.layerRegistry.getLayers());
-				const layerIdArray = layerArray.map(layer => layer.id);
-				this.setCurrentLayer(layerArray[(layerIdArray.indexOf(this.getCurrentLayer().id) + 1) % layerArray.length]);
-			}
-			else if(event.key === "`") {
-				this.debugMode = !this.debugMode;
-			}
-			else if(event.key === "n") {
-				const nodeRef = await this.hoverSelection.getParent();
-				if(nodeRef) {
-					const where = (await this.getNamePosition(nodeRef)).center.subtract(this.scrollOffset);
+				else if(event.key === "`") {
+					this.debugMode = !this.debugMode;
+				}
+				else if(event.key === "n") {
+					const nodeRef = await this.hoverSelection.getParent();
+					if(nodeRef) {
+						const where = (await this.getNamePosition(nodeRef)).center.subtract(this.scrollOffset);
 
-					const input = document.createElement("input");
-					input.value = (await nodeRef.getPString("name")) || "";
+						const input = document.createElement("input");
+						input.value = (await nodeRef.getPString("name")) || "";
 
-					input.style.position = "absolute";
-					input.style.left = `${where.x}px`;
-					input.style.top = `${where.y}px`;
-					input.style.fontSize = "16px";
+						input.style.position = "absolute";
+						input.style.left = `${where.x}px`;
+						input.style.top = `${where.y}px`;
+						input.style.fontSize = "16px";
 
-					const cancel = () => {
-						input.removeEventListener("blur", cancel);
-						input.remove();
-						this.focus();
-					};
+						const cancel = () => {
+							input.removeEventListener("blur", cancel);
+							input.remove();
+							this.focus();
+						};
 
-					const submit = async () => {
-						this.performAction(new ChangeNameAction(this, {nodeRef: nodeRef, name: input.value}), true);
-						cancel();
-					};
-
-					input.addEventListener("blur", cancel);
-
-					input.addEventListener("keyup", (event) => {
-						if(event.key === "Escape") {
+						const submit = async () => {
+							this.performAction(new ChangeNameAction(this, {nodeRef: nodeRef, name: input.value}), true);
 							cancel();
-						}
-						else if(event.key === "Enter") {
-							submit();
-						}
-						event.preventDefault();
-					});
+						};
 
-					this.parent.appendChild(input);
-					input.focus();
-					event.preventDefault();
+						input.addEventListener("blur", cancel);
+
+						input.addEventListener("keyup", (event) => {
+							if(event.key === "Escape") {
+								cancel();
+							}
+							else if(event.key === "Enter") {
+								submit();
+							}
+							event.preventDefault();
+						});
+
+						this.parent.appendChild(input);
+						input.focus();
+						event.preventDefault();
+					}
 				}
 			}
 			this.requestRedraw();
@@ -5048,11 +5409,49 @@ class RenderContext {
 
 		window.requestAnimationFrame(this.redrawLoop.bind(this));
 		setTimeout(this.recalculateLoop.bind(this), 10);
-		setTimeout(this.recalculateSelection.bind(this), 10);
-		setTimeout(this.toggleSelectionCanvas.bind(this), this.selectionCanvasToggleTime);
+
+		if(this.inNormalMode()) {
+			setTimeout(this.recalculateSelection.bind(this), 10);
+			setTimeout(this.toggleSelectionCanvas.bind(this), this.selectionCanvasToggleTime);
+		}
 
 		this.changeBrush(this.brushes.add);
 		this.setCurrentLayer(this.getCurrentLayer());
+	}
+
+	mouseEventToCanvasPoint(event) {
+		return new Vector3(event.offsetX, event.offsetY, 0);
+	}
+
+	canvasOffset() {
+		return new Vector3(this.canvas.offsetLeft, this.canvas.offsetTop, 0);
+	}
+
+	inNormalMode() {
+		return this.options.mode === "normal";
+	}
+
+	inExportMode() {
+		return this.options.mode === "export";
+	}
+
+	inPreviewMode() {
+		return this.options.mode === "preview";
+	}
+
+	inControlledMode() {
+		return this.options.mode === "normal" || this.options.mode === "preview";
+	}
+
+	async openExportModal() {
+		this.canvas.style.display = "none";
+		this.brushbar.element.style.display = "none";
+		const exportUI = new ExportUI(this);
+		await exportUI.show();
+		this.brushbar.element.style.display = "";
+		this.canvas.style.display = "";
+		this.clearKeysDown();
+		this.focus();
 	}
 
 	toggleSelectionCanvas() {
@@ -5160,7 +5559,7 @@ class RenderContext {
 
 	requestZoomChange(zoom) {
 		if(this.requestedZoom !== zoom) {
-			this.requestedZoom = Math.max(1, Math.min(zoom, this.maxZoom));
+			this.requestedZoom = Math.max(1, zoom);
 			this.lastZoomRequest = performance.now();
 			this.requestRedraw();
 			this.hooks.call("requested_zoom", zoom);
@@ -5594,6 +5993,10 @@ class RenderContext {
 		return zoom / (1 + 20 / zoom);
 	}
 
+	unitsPerPixelToZoom(unitsPerPixel) {
+		return Math.ceil((unitsPerPixel + Math.sqrt((unitsPerPixel ** 2) + 80 * unitsPerPixel)) / 2);
+	}
+
 	pixelsToUnits(pixels) {
 		return pixels * this.zoomFactor(this.zoom);
 	}
@@ -5618,9 +6021,15 @@ class RenderContext {
 	 * This requires a full redraw.
 	 */
 	recalculateSize() {
-		// Keep the canvas matching the parent size.
-		this.canvas.width = this.parent.clientWidth;
-		this.canvas.height = this.parent.clientHeight;
+		if(this.inExportMode()) {
+			this.canvas.width = this.options.exportBox.size().x;
+			this.canvas.height = this.options.exportBox.size().y;
+		}
+		else {
+			// Keep the canvas matching the parent size.
+			this.canvas.width = this.parent.clientWidth;
+			this.canvas.height = this.parent.clientHeight;
+		}
 
 		this.selectionCanvas.width = this.canvas.width;
 		this.selectionCanvas.height = this.canvas.height;
@@ -5965,6 +6374,8 @@ class RenderContext {
 			}
 		}
 
+		this.hooks.call("calculated");
+
 		this.requestRedraw();
 	}
 
@@ -5998,7 +6409,9 @@ class RenderContext {
 		}
 
 		// Debug help
-		infoLine("Press 'n' to set or edit an object's name.");
+		if(this.inNormalMode()) {
+			infoLine("Press 'n' to set or edit an object's name. ` to toggle debug mode.");
+		}
 		if(this.brush instanceof AddBrush) {
 			infoLine("Click to add terrain");
 		}
@@ -6011,17 +6424,8 @@ class RenderContext {
 		else if(this.brush instanceof AreaBrush) {
 			infoLine("Click to select an area. Hold Shift and click to delete part of that area.");
 		}
-		infoLine("Right click or arrow keys to move map. ` to toggle debug mode.");
 
-		if(this.isCalculatingDistance()) {
-			const a = this.distanceMarkers[1];
-			const b = this.distanceMarkers[2];
-
-			if(a && b) {
-				const meters = this.mapper.unitsToMeters(a.subtract(b).length());
-				infoLine(`Distance between markers: ${Math.floor(meters + 0.5)}m (${Math.floor(meters / 1000 + 0.5)}km)`);
-			}
-		}
+		infoLine("Right click or arrow keys to move map.");
 	}
 
 	async drawDebug() {
@@ -6299,9 +6703,10 @@ class RenderContext {
 		const pixelToMeters = this.mapper.unitsToMeters(this.zoomFactor(this.requestedZoom));
 
 		const lines = [
-			`Zoom ${this.requestedZoom} / ${this.maxZoom}`,
+			`Zoom ${this.requestedZoom}`,
 			`1px = ${pixelToMeters.toFixed(2)}m`,
 			`Brush diameter ${(pixelToMeters * this.brush.getRadius()).toFixed(2)}m`,
+			`Screen diagonal ${(this.mapper.unitsToMeters(this.zoomFactor(this.requestedZoom) * (new Vector3(0, 0, 0)).subtract(this.screenSize()).length()) / 1000).toFixed(2)}km`,
 			"Click to apply",
 		];
 
@@ -6398,25 +6803,29 @@ class RenderContext {
 		await this.drawNodes();
 		await this.drawLabels();
 
-		if(this.isCalculatingDistance()) {
-			await this.drawPegs();
+		if(this.inControlledMode()) {
+			if(this.isCalculatingDistance()) {
+				await this.drawPegs();
+			}
+			await this.drawBrush();
+
+			if(this.msSinceLastZoomRequest() < this.zoomRequestTimeout) {
+				await this.drawZoom();
+				this.requestRedraw();
+			}
+
+			await this.drawHelp();
+			await this.drawScale();
+			await this.drawInfoMessages();
+
+			if(this.debugMode) {
+				await this.drawDebug();
+			}
+
+			await this.drawVersion();
 		}
-		await this.drawBrush();
 
-		if(this.msSinceLastZoomRequest() < this.zoomRequestTimeout) {
-			await this.drawZoom();
-			this.requestRedraw();
-		}
-
-		await this.drawHelp();
-		await this.drawScale();
-		await this.drawInfoMessages();
-
-		if(this.debugMode) {
-			await this.drawDebug();
-		}
-
-		await this.drawVersion();
+		await this.hooks.call("drawn");
 	}
 
 	async * visibleObjectNodes() {
@@ -6560,8 +6969,8 @@ class Mapper {
 	 * @returns {RenderContext}
 	 * Example: const renderContext = mapper.render(document.getElementById("mapper_div"))
 	 */
-	render(element) {
-		return new RenderContext(element, this);
+	render(element, options={}) {
+		return new RenderContext(element, this, options);
 	}
 
 	async insertNode(point, nodeType, options) {
